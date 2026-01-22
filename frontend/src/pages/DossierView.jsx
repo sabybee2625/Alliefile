@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import {
@@ -47,10 +48,29 @@ import {
   Share2,
   ListOrdered,
   Copy,
+  RefreshCw,
+  PenTool,
+  AlertCircle,
 } from 'lucide-react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { PieceValidationModal } from '../components/PieceValidationModal';
 import { ChronologyView } from '../components/ChronologyView';
+import { AssistantView } from '../components/AssistantView';
+
+// Analysis status labels
+const analysisStatusLabels = {
+  pending: 'En attente',
+  analyzing: 'Analyse en cours',
+  complete: 'Analysé',
+  error: 'Erreur',
+};
+
+const analysisStatusColors = {
+  pending: 'bg-slate-100 text-slate-600',
+  analyzing: 'bg-blue-100 text-blue-600',
+  complete: 'bg-emerald-100 text-emerald-600',
+  error: 'bg-red-100 text-red-600',
+};
 
 const DossierView = () => {
   const { id } = useParams();
@@ -95,7 +115,11 @@ const DossierView = () => {
       setUploadOpen(false);
       fetchData();
     } catch (error) {
-      toast.error('Erreur lors de l\'upload');
+      if (error.response?.status === 413) {
+        toast.error('Fichier trop volumineux (max 50 Mo)');
+      } else {
+        toast.error('Erreur lors de l\'upload');
+      }
     } finally {
       setUploading(false);
     }
@@ -109,6 +133,19 @@ const DossierView = () => {
       fetchData();
     } catch (error) {
       toast.error('Erreur lors de l\'analyse');
+    } finally {
+      setAnalyzing((prev) => ({ ...prev, [pieceId]: false }));
+    }
+  };
+
+  const handleReanalyze = async (pieceId) => {
+    setAnalyzing((prev) => ({ ...prev, [pieceId]: true }));
+    try {
+      await piecesApi.reanalyze(pieceId);
+      toast.success('Ré-analyse terminée');
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de la ré-analyse');
     } finally {
       setAnalyzing((prev) => ({ ...prev, [pieceId]: false }));
     }
@@ -136,16 +173,6 @@ const DossierView = () => {
       fetchData();
     } catch (error) {
       toast.error('Erreur lors de la renumérotation');
-    }
-  };
-
-  const handleExportCsv = async () => {
-    try {
-      const res = await dossiersApi.exportCsv(id);
-      downloadBlob(res.data, `sommaire_${dossier.title}.csv`);
-      toast.success('Export CSV téléchargé');
-    } catch (error) {
-      toast.error('Erreur lors de l\'export');
     }
   };
 
@@ -179,26 +206,17 @@ const DossierView = () => {
         await navigator.clipboard.writeText(shareLink);
         toast.success('Lien copié');
       } else {
-        // Fallback for older browsers or non-secure contexts
         const textArea = document.createElement('textarea');
         textArea.value = shareLink;
         textArea.style.position = 'fixed';
         textArea.style.left = '-999999px';
-        textArea.style.top = '-999999px';
         document.body.appendChild(textArea);
-        textArea.focus();
         textArea.select();
-        try {
-          document.execCommand('copy');
-          toast.success('Lien copié');
-        } catch (err) {
-          toast.error('Impossible de copier le lien');
-        } finally {
-          document.body.removeChild(textArea);
-        }
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        toast.success('Lien copié');
       }
-    } catch (err) {
-      console.error('Copy failed:', err);
+    } catch {
       toast.error('Impossible de copier le lien');
     }
   };
@@ -219,9 +237,7 @@ const DossierView = () => {
         <div className="text-center py-12">
           <p className="text-slate-500">Dossier non trouvé</p>
           <Link to="/dashboard">
-            <Button variant="link" className="mt-2">
-              Retour aux dossiers
-            </Button>
+            <Button variant="link" className="mt-2">Retour aux dossiers</Button>
           </Link>
         </div>
       </Layout>
@@ -245,9 +261,7 @@ const DossierView = () => {
               <ArrowLeft className="w-4 h-4 mr-1" />
               Retour aux dossiers
             </Link>
-            <h1 className="font-heading text-2xl font-bold text-slate-900">
-              {dossier.title}
-            </h1>
+            <h1 className="font-heading text-2xl font-bold text-slate-900">{dossier.title}</h1>
             {dossier.description && (
               <p className="text-sm text-slate-500 mt-1">{dossier.description}</p>
             )}
@@ -261,11 +275,36 @@ const DossierView = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleExportCsv} data-testid="export-csv">
-                  Sommaire CSV
+                <DropdownMenuItem 
+                  onClick={async () => {
+                    try {
+                      const res = await dossiersApi.exportPdf(id);
+                      downloadBlob(res.data, `chronologie_${dossier.title}.pdf`);
+                      toast.success('PDF téléchargé');
+                    } catch { toast.error('Erreur'); }
+                  }}
+                  data-testid="export-pdf"
+                >
+                  <FileText className="w-4 h-4 mr-2 text-red-600" />
+                  Chronologie PDF
                 </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={async () => {
+                    try {
+                      const res = await dossiersApi.exportDocx(id);
+                      downloadBlob(res.data, `chronologie_${dossier.title}.docx`);
+                      toast.success('DOCX téléchargé');
+                    } catch { toast.error('Erreur'); }
+                  }}
+                  data-testid="export-docx"
+                >
+                  <FileText className="w-4 h-4 mr-2 text-blue-600" />
+                  Chronologie DOCX
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleExportZip} data-testid="export-zip">
-                  Archive ZIP
+                  <FileText className="w-4 h-4 mr-2 text-amber-600" />
+                  Archive ZIP (pièces)
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -276,9 +315,7 @@ const DossierView = () => {
               disabled={creatingShare}
               data-testid="share-btn"
             >
-              {creatingShare ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
+              {creatingShare ? <Loader2 className="w-4 h-4 animate-spin" /> : (
                 <>
                   <Share2 className="w-4 h-4 mr-2" />
                   Partager
@@ -296,21 +333,16 @@ const DossierView = () => {
           </div>
         </div>
 
-        {/* Share Link Dialog */}
+        {/* Share Link */}
         {shareLink && (
           <Card className="border-sky-200 bg-sky-50">
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-sky-900">Lien de partage (valable 7 jours)</p>
-                  <p className="text-xs text-sky-700 font-mono mt-1">{shareLink}</p>
+                  <p className="text-xs text-sky-700 font-mono mt-1 break-all">{shareLink}</p>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={copyShareLink}
-                  className="rounded-sm"
-                  data-testid="copy-share-link"
-                >
+                <Button size="sm" onClick={copyShareLink} className="rounded-sm" data-testid="copy-share-link">
                   <Copy className="w-4 h-4 mr-2" />
                   Copier
                 </Button>
@@ -367,42 +399,32 @@ const DossierView = () => {
           <TabsList>
             <TabsTrigger value="pieces" data-testid="tab-pieces">Pièces</TabsTrigger>
             <TabsTrigger value="chronology" data-testid="tab-chronology">Chronologie</TabsTrigger>
+            <TabsTrigger value="assistant" data-testid="tab-assistant">
+              <PenTool className="w-4 h-4 mr-1" />
+              Assistant
+            </TabsTrigger>
           </TabsList>
 
+          {/* PIECES TAB */}
           <TabsContent value="pieces" className="space-y-4">
-            {/* Actions */}
             {pieces.length > 0 && (
               <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRenumber}
-                  className="rounded-sm"
-                  data-testid="renumber-btn"
-                >
+                <Button variant="outline" size="sm" onClick={handleRenumber} className="rounded-sm" data-testid="renumber-btn">
                   <ListOrdered className="w-4 h-4 mr-2" />
                   Renuméroter
                 </Button>
               </div>
             )}
 
-            {/* Pieces List */}
             {pieces.length === 0 ? (
               <Card className="border-slate-200 border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                     <FileText className="w-8 h-8 text-slate-400" />
                   </div>
-                  <h3 className="font-heading font-semibold text-slate-900 mb-1">
-                    Aucune pièce
-                  </h3>
-                  <p className="text-sm text-slate-500 mb-4">
-                    Ajoutez votre première pièce au dossier
-                  </p>
-                  <Button
-                    onClick={() => setUploadOpen(true)}
-                    className="bg-slate-900 hover:bg-slate-800 rounded-sm"
-                  >
+                  <h3 className="font-heading font-semibold text-slate-900 mb-1">Aucune pièce</h3>
+                  <p className="text-sm text-slate-500 mb-4">Ajoutez votre première pièce au dossier</p>
+                  <Button onClick={() => setUploadOpen(true)} className="bg-slate-900 hover:bg-slate-800 rounded-sm">
                     <Upload className="w-4 h-4 mr-2" />
                     Ajouter une pièce
                   </Button>
@@ -420,31 +442,26 @@ const DossierView = () => {
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4">
                           <div className="w-12 h-12 bg-slate-100 rounded-sm flex items-center justify-center flex-shrink-0">
-                            <span className="font-mono font-semibold text-slate-700">
-                              {piece.numero}
-                            </span>
+                            <span className="font-mono font-semibold text-slate-700">{piece.numero}</span>
                           </div>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <h3 className="font-medium text-slate-900 truncate">
                                 {piece.validated_data?.titre || piece.ai_proposal?.titre || piece.original_filename}
                               </h3>
-                              <Badge
-                                variant="outline"
-                                className={`text-xs ${
-                                  piece.status === 'pret'
-                                    ? 'status-pret'
-                                    : 'status-a_verifier'
-                                }`}
-                              >
+                              <Badge variant="outline" className={`text-xs ${piece.status === 'pret' ? 'status-pret' : 'status-a_verifier'}`}>
                                 {statusLabels[piece.status]}
                               </Badge>
+                              {piece.analysis_status && piece.analysis_status !== 'complete' && (
+                                <Badge variant="outline" className={`text-xs ${analysisStatusColors[piece.analysis_status]}`}>
+                                  {piece.analysis_status === 'analyzing' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                                  {analysisStatusLabels[piece.analysis_status]}
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-4 text-sm text-slate-500">
                               {(piece.validated_data?.type_piece || piece.ai_proposal?.type_piece) && (
-                                <span>
-                                  {pieceTypeLabels[piece.validated_data?.type_piece || piece.ai_proposal?.type_piece]}
-                                </span>
+                                <span>{pieceTypeLabels[piece.validated_data?.type_piece || piece.ai_proposal?.type_piece]}</span>
                               )}
                               {(piece.validated_data?.date_document || piece.ai_proposal?.date_document) && (
                                 <span className="flex items-center gap-1">
@@ -452,11 +469,21 @@ const DossierView = () => {
                                   {formatDate(piece.validated_data?.date_document || piece.ai_proposal?.date_document)}
                                 </span>
                               )}
+                              {piece.file_size > 0 && (
+                                <span className="text-xs text-slate-400">
+                                  {(piece.file_size / 1024 / 1024).toFixed(1)} Mo
+                                </span>
+                              )}
                             </div>
                             {piece.validated_data?.resume_quoi && (
-                              <p className="text-sm text-slate-600 mt-2 line-clamp-2">
-                                {piece.validated_data.resume_quoi}
-                              </p>
+                              <p className="text-sm text-slate-600 mt-2 line-clamp-2">{piece.validated_data.resume_quoi}</p>
+                            )}
+                            {/* Show confidence indicator when AI proposal exists */}
+                            {piece.ai_proposal && !piece.validated_data && (
+                              <div className="mt-2 flex items-center gap-2 text-xs">
+                                <AlertCircle className="w-3 h-3 text-amber-500" />
+                                <span className="text-amber-600">Propositions IA disponibles - à valider</span>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -469,9 +496,7 @@ const DossierView = () => {
                               className="bg-sky-600 hover:bg-sky-700 rounded-sm"
                               data-testid={`analyze-piece-${index}`}
                             >
-                              {analyzing[piece.id] ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
+                              {analyzing[piece.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : (
                                 <>
                                   <Sparkles className="w-4 h-4 mr-1" />
                                   Analyser
@@ -492,19 +517,12 @@ const DossierView = () => {
                           )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                data-testid={`piece-menu-${index}`}
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`piece-menu-${index}`}>
                                 <MoreVertical className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => window.open(piecesApi.getFileUrl(piece.id), '_blank')}
-                              >
+                              <DropdownMenuItem onClick={() => window.open(piecesApi.getFileUrl(piece.id), '_blank')}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 Voir le fichier
                               </DropdownMenuItem>
@@ -514,10 +532,15 @@ const DossierView = () => {
                                   Voir/Valider propositions
                                 </DropdownMenuItem>
                               )}
-                              <DropdownMenuItem
-                                onClick={() => setDeleteTarget(piece.id)}
-                                className="text-red-600"
+                              <DropdownMenuItem 
+                                onClick={() => handleReanalyze(piece.id)}
+                                disabled={analyzing[piece.id]}
                               >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Relancer l'analyse
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setDeleteTarget(piece.id)} className="text-red-600">
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Supprimer
                               </DropdownMenuItem>
@@ -532,8 +555,14 @@ const DossierView = () => {
             )}
           </TabsContent>
 
+          {/* CHRONOLOGY TAB */}
           <TabsContent value="chronology">
-            <ChronologyView dossierId={id} />
+            <ChronologyView dossierId={id} dossierTitle={dossier.title} />
+          </TabsContent>
+
+          {/* ASSISTANT TAB */}
+          <TabsContent value="assistant">
+            <AssistantView dossierId={id} pieces={pieces} />
           </TabsContent>
         </Tabs>
       </div>
@@ -544,7 +573,7 @@ const DossierView = () => {
           <DialogHeader>
             <DialogTitle className="font-heading">Ajouter une pièce</DialogTitle>
             <DialogDescription>
-              Déposez un fichier (PDF, image, DOCX) pour l'ajouter au dossier
+              Déposez un fichier (PDF, image, DOCX, DOC, HEIC) pour l'ajouter au dossier
             </DialogDescription>
           </DialogHeader>
           <FileUploadZone onUpload={handleUpload} uploading={uploading} />
@@ -568,9 +597,7 @@ const DossierView = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Supprimer cette pièce ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Cette action est irréversible.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Cette action est irréversible.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="rounded-sm">Annuler</AlertDialogCancel>

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -18,6 +18,8 @@ import json
 import base64
 import io
 import zipfile
+import subprocess
+import tempfile
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -45,6 +47,10 @@ UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 EXPORTS_DIR = ROOT_DIR / "exports"
 EXPORTS_DIR.mkdir(exist_ok=True)
+
+# Config
+MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "50"))
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -91,7 +97,7 @@ class DossierResponse(BaseModel):
 
 class AIProposal(BaseModel):
     type_piece: str
-    type_confidence: str  # faible, moyen, fort
+    type_confidence: str
     date_document: Optional[str] = None
     date_confidence: str = "faible"
     titre: str
@@ -120,7 +126,9 @@ class PieceResponse(BaseModel):
     filename: str
     original_filename: str
     file_type: str
-    status: str  # a_verifier, pret
+    file_size: int = 0
+    status: str
+    analysis_status: str = "pending"  # pending, analyzing, complete, error
     ai_proposal: Optional[AIProposal] = None
     validated_data: Optional[PieceValidation] = None
     created_at: str
@@ -136,6 +144,17 @@ class ShareLinkResponse(BaseModel):
     token: str
     expires_at: str
     created_at: str
+
+class AssistantRequest(BaseModel):
+    document_type: str  # expose_faits, chronologie_narrative, courrier_avocat, requete_jaf
+    piece_ids: List[str] = []  # Empty = all validated pieces
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
+
+class AssistantResponse(BaseModel):
+    content: str
+    pieces_used: List[int]
+    warnings: List[str] = []
 
 # ===================== AUTH HELPERS =====================
 
@@ -265,7 +284,6 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
-    # Delete pieces and files
     pieces = await db.pieces.find({"dossier_id": dossier_id}).to_list(1000)
     for piece in pieces:
         filepath = UPLOAD_DIR / piece["filename"]
@@ -277,14 +295,79 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
     await db.dossiers.delete_one({"id": dossier_id})
     return {"message": "Dossier deleted"}
 
+# ===================== FILE PROCESSING =====================
+
+def convert_heic_to_jpg(filepath: Path) -> Path:
+    """Convert HEIC to JPG"""
+    try:
+        from PIL import Image
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+        
+        img = Image.open(filepath)
+        new_path = filepath.with_suffix('.jpg')
+        img.convert('RGB').save(new_path, 'JPEG', quality=95)
+        filepath.unlink()  # Remove original
+        return new_path
+    except Exception as e:
+        logger.error(f"HEIC conversion error: {e}")
+        return filepath
+
+def extract_text_from_docx(filepath: Path) -> str:
+    """Extract text from DOCX file"""
+    try:
+        from docx import Document
+        doc = Document(filepath)
+        text_parts = []
+        for para in doc.paragraphs:
+            text_parts.append(para.text)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    text_parts.append(cell.text)
+        return "\n".join(text_parts)
+    except Exception as e:
+        logger.error(f"DOCX extraction error: {e}")
+        return ""
+
+def extract_text_from_doc(filepath: Path) -> str:
+    """Extract text from DOC file using antiword or fallback"""
+    try:
+        result = subprocess.run(['antiword', str(filepath)], capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            return result.stdout
+    except Exception:
+        pass
+    return ""
+
+def extract_text_from_pdf(filepath: Path) -> str:
+    """Extract text from PDF"""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(filepath)
+        text_parts = []
+        for page in reader.pages[:50]:  # Limit to 50 pages
+            text_parts.append(page.extract_text() or "")
+        return "\n".join(text_parts)
+    except Exception as e:
+        logger.error(f"PDF extraction error: {e}")
+        return ""
+
 # ===================== PIECE ROUTES =====================
 
 @api_router.post("/dossiers/{dossier_id}/pieces", response_model=PieceResponse)
 async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    # Verify dossier ownership
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    # Read file content
+    content = await file.read()
+    file_size = len(content)
+    
+    # Check file size
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {MAX_FILE_SIZE_MB} MB)")
     
     # Get next piece number
     last_piece = await db.pieces.find_one({"dossier_id": dossier_id}, sort=[("numero", -1)])
@@ -292,7 +375,10 @@ async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict
     
     # Determine file type
     ext = Path(file.filename).suffix.lower()
-    file_type_map = {".pdf": "pdf", ".jpg": "image", ".jpeg": "image", ".png": "image", ".docx": "docx"}
+    file_type_map = {
+        ".pdf": "pdf", ".jpg": "image", ".jpeg": "image", ".png": "image",
+        ".docx": "docx", ".doc": "doc", ".heic": "heic", ".heif": "heic"
+    }
     file_type = file_type_map.get(ext, "other")
     
     # Save file
@@ -301,8 +387,13 @@ async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict
     filepath = UPLOAD_DIR / filename
     
     async with aiofiles.open(filepath, 'wb') as f:
-        content = await file.read()
         await f.write(content)
+    
+    # Convert HEIC if needed
+    if file_type == "heic":
+        filepath = convert_heic_to_jpg(filepath)
+        filename = filepath.name
+        file_type = "image"
     
     now = datetime.now(timezone.utc).isoformat()
     piece_doc = {
@@ -312,15 +403,18 @@ async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict
         "filename": filename,
         "original_filename": file.filename,
         "file_type": file_type,
+        "file_size": file_size,
         "status": "a_verifier",
+        "analysis_status": "pending",
         "ai_proposal": None,
         "validated_data": None,
+        "extracted_text": None,
         "created_at": now,
         "updated_at": now
     }
     await db.pieces.insert_one(piece_doc)
     
-    return PieceResponse(**piece_doc)
+    return PieceResponse(**{k: v for k, v in piece_doc.items() if k != "extracted_text"})
 
 @api_router.get("/dossiers/{dossier_id}/pieces", response_model=List[PieceResponse])
 async def list_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
@@ -328,16 +422,15 @@ async def list_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
-    pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0}).sort("numero", 1).to_list(1000)
+    pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0, "extracted_text": 0}).sort("numero", 1).to_list(1000)
     return [PieceResponse(**p) for p in pieces]
 
 @api_router.get("/pieces/{piece_id}", response_model=PieceResponse)
 async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
-    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
     
-    # Verify ownership
     dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -371,22 +464,66 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Perform AI analysis
-    filepath = UPLOAD_DIR / piece["filename"]
-    ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"])
+    # Set status to analyzing
+    await db.pieces.update_one({"id": piece_id}, {"$set": {"analysis_status": "analyzing"}})
     
-    # Update piece
+    try:
+        filepath = UPLOAD_DIR / piece["filename"]
+        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        
+        await db.pieces.update_one(
+            {"id": piece_id},
+            {"$set": {
+                "ai_proposal": ai_proposal,
+                "analysis_status": "complete",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+    except Exception as e:
+        logger.error(f"Analysis error: {e}")
+        await db.pieces.update_one({"id": piece_id}, {"$set": {"analysis_status": "error"}})
+    
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
+    return PieceResponse(**piece)
+
+@api_router.post("/pieces/{piece_id}/reanalyze", response_model=PieceResponse)
+async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
+    """Re-analyze a piece (useful if OCR was bad)"""
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    if not piece:
+        raise HTTPException(status_code=404, detail="Piece not found")
+    
+    dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Clear previous analysis and re-analyze
     await db.pieces.update_one(
         {"id": piece_id},
-        {"$set": {"ai_proposal": ai_proposal, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"ai_proposal": None, "analysis_status": "analyzing", "extracted_text": None}}
     )
     
-    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    try:
+        filepath = UPLOAD_DIR / piece["filename"]
+        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        
+        await db.pieces.update_one(
+            {"id": piece_id},
+            {"$set": {
+                "ai_proposal": ai_proposal,
+                "analysis_status": "complete",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+    except Exception as e:
+        logger.error(f"Re-analysis error: {e}")
+        await db.pieces.update_one({"id": piece_id}, {"$set": {"analysis_status": "error"}})
+    
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
     return PieceResponse(**piece)
 
 @api_router.post("/pieces/{piece_id}/validate", response_model=PieceResponse)
 async def validate_piece(piece_id: str, data: PieceValidation, user: dict = Depends(get_current_user)):
-    """User validates AI proposal or provides their own data"""
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
@@ -404,7 +541,7 @@ async def validate_piece(piece_id: str, data: PieceValidation, user: dict = Depe
         }}
     )
     
-    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
     return PieceResponse(**piece)
 
 @api_router.delete("/pieces/{piece_id}")
@@ -417,7 +554,6 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Delete file
     filepath = UPLOAD_DIR / piece["filename"]
     if filepath.exists():
         filepath.unlink()
@@ -427,7 +563,6 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.post("/dossiers/{dossier_id}/renumber")
 async def renumber_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
-    """Renumber pieces in order"""
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
@@ -440,8 +575,8 @@ async def renumber_pieces(dossier_id: str, user: dict = Depends(get_current_user
 
 # ===================== AI ANALYSIS =====================
 
-async def analyze_document_with_ai(filepath: Path, file_type: str, original_filename: str) -> dict:
-    """Analyze document using GPT-5.2 Vision"""
+async def analyze_document_with_ai(filepath: Path, file_type: str, original_filename: str, piece_id: str) -> dict:
+    """Analyze document using Gemini Vision"""
     from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
     
     api_key = os.environ.get("EMERGENT_LLM_KEY")
@@ -450,16 +585,29 @@ async def analyze_document_with_ai(filepath: Path, file_type: str, original_file
         return generate_fallback_proposal(original_filename)
     
     try:
+        # Extract text for DOCX/DOC files first
+        extracted_text = None
+        if file_type == "docx":
+            extracted_text = extract_text_from_docx(filepath)
+        elif file_type == "doc":
+            extracted_text = extract_text_from_doc(filepath)
+        elif file_type == "pdf":
+            extracted_text = extract_text_from_pdf(filepath)
+        
+        # Store extracted text
+        if extracted_text:
+            await db.pieces.update_one({"id": piece_id}, {"$set": {"extracted_text": extracted_text[:50000]}})
+        
         system_message = """Tu es un assistant juridique expert. Analyse ce document juridique et extrais les informations suivantes de manière structurée.
 
 IMPORTANT:
 - N'invente JAMAIS d'information. Si tu ne trouves pas une information, indique "Non identifié".
 - Pour chaque information, indique un niveau de confiance: "faible", "moyen", ou "fort".
-- Cite un extrait du document qui justifie ta proposition quand c'est possible.
+- Cite un extrait du document (max 200 caractères) qui justifie ta proposition.
 
 Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
 {
-  "type_piece": "plainte|main_courante|certificat_medical|attestation|sms|conclusions|assignation|recit|autre",
+  "type_piece": "plainte|main_courante|certificat_medical|attestation|sms|conclusions|assignation|recit|facture|contrat|jugement|ordonnance|autre",
   "type_confidence": "faible|moyen|fort",
   "date_document": "YYYY-MM-DD ou null si non trouvée",
   "date_confidence": "faible|moyen|fort",
@@ -468,9 +616,9 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
   "resume_qui": "personnes impliquées",
   "resume_quoi": "fait ou motif principal",
   "resume_ou": "lieu si mentionné ou null",
-  "resume_element_cle": "diagnostic, menace, refus, constat, etc.",
+  "resume_element_cle": "diagnostic, menace, refus, constat, montant, décision, etc.",
   "mots_cles": ["mot1", "mot2", "mot3"],
-  "extrait_justificatif": "extrait du document justifiant l'analyse"
+  "extrait_justificatif": "extrait du document justifiant l'analyse (max 200 car.)"
 }"""
 
         chat = LlmChat(
@@ -479,23 +627,29 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
             system_message=system_message
         ).with_model("gemini", "gemini-2.5-flash")
         
-        # Determine mime type
-        mime_map = {
-            "pdf": "application/pdf",
-            "image": "image/jpeg" if filepath.suffix.lower() in [".jpg", ".jpeg"] else "image/png",
-            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        }
-        mime_type = mime_map.get(file_type, "application/octet-stream")
-        
-        file_content = FileContentWithMimeType(
-            file_path=str(filepath),
-            mime_type=mime_type
-        )
-        
-        user_message = UserMessage(
-            text=f"Analyse ce document juridique (nom original: {original_filename}). Extrais toutes les informations pertinentes.",
-            file_contents=[file_content]
-        )
+        # For text-based files with extracted text, send the text
+        if extracted_text and len(extracted_text) > 100:
+            user_message = UserMessage(
+                text=f"Analyse ce document juridique (nom: {original_filename}).\n\nContenu extrait:\n{extracted_text[:30000]}"
+            )
+        else:
+            # For images and PDFs, use vision
+            mime_map = {
+                "pdf": "application/pdf",
+                "image": "image/jpeg" if filepath.suffix.lower() in [".jpg", ".jpeg"] else "image/png",
+                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
+            mime_type = mime_map.get(file_type, "application/octet-stream")
+            
+            file_content = FileContentWithMimeType(
+                file_path=str(filepath),
+                mime_type=mime_type
+            )
+            
+            user_message = UserMessage(
+                text=f"Analyse ce document juridique (nom original: {original_filename}). Extrais toutes les informations pertinentes.",
+                file_contents=[file_content]
+            )
         
         response = await chat.send_message(user_message)
         
@@ -516,7 +670,6 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
         return generate_fallback_proposal(original_filename)
 
 def generate_fallback_proposal(filename: str) -> dict:
-    """Generate basic proposal when AI fails"""
     return {
         "type_piece": "autre",
         "type_confidence": "faible",
@@ -532,21 +685,16 @@ def generate_fallback_proposal(filename: str) -> dict:
         "extrait_justificatif": "Analyse automatique non disponible. Veuillez remplir manuellement."
     }
 
-# ===================== EXPORTS =====================
+# ===================== CHRONOLOGY & EXPORTS =====================
 
 @api_router.get("/dossiers/{dossier_id}/chronology")
 async def get_chronology(dossier_id: str, user: dict = Depends(get_current_user)):
-    """Get chronological view of validated pieces"""
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
-    pieces = await db.pieces.find(
-        {"dossier_id": dossier_id, "status": "pret"},
-        {"_id": 0}
-    ).to_list(1000)
+    pieces = await db.pieces.find({"dossier_id": dossier_id, "status": "pret"}, {"_id": 0}).to_list(1000)
     
-    # Build chronology entries
     chronology = []
     for p in pieces:
         if p.get("validated_data"):
@@ -565,14 +713,12 @@ async def get_chronology(dossier_id: str, user: dict = Depends(get_current_user)
                 "type_piece": p["validated_data"].get("type_piece")
             })
     
-    # Sort by date
     chronology.sort(key=lambda x: x["date"] or "9999-99-99")
     
-    return {"dossier": dossier["title"], "entries": chronology}
+    return {"dossier": dossier["title"], "dossier_id": dossier_id, "entries": chronology}
 
 @api_router.get("/dossiers/{dossier_id}/export/csv")
 async def export_csv(dossier_id: str, user: dict = Depends(get_current_user)):
-    """Export sommaire as CSV"""
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
@@ -594,7 +740,6 @@ async def export_csv(dossier_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.get("/dossiers/{dossier_id}/export/zip")
 async def export_zip(dossier_id: str, user: dict = Depends(get_current_user)):
-    """Export all pieces as ZIP"""
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
@@ -616,6 +761,348 @@ async def export_zip(dossier_id: str, user: dict = Depends(get_current_user)):
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=dossier_{dossier_id}.zip"}
     )
+
+# ===================== PDF EXPORT =====================
+
+def format_date_fr(date_str: str) -> str:
+    """Format date to DD/MM/YYYY"""
+    if not date_str:
+        return "Date non définie"
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        return dt.strftime("%d/%m/%Y")
+    except:
+        try:
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                return f"{parts[2]}/{parts[1]}/{parts[0]}"
+        except:
+            pass
+        return date_str
+
+@api_router.get("/dossiers/{dossier_id}/export/pdf")
+async def export_chronology_pdf(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Export chronology as professional PDF"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+    
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    pieces = await db.pieces.find({"dossier_id": dossier_id, "status": "pret"}, {"_id": 0}).to_list(1000)
+    
+    # Build chronology
+    chronology = []
+    for p in pieces:
+        if p.get("validated_data"):
+            chronology.append({
+                "numero": p["numero"],
+                "date": p["validated_data"].get("date_document"),
+                "titre": p["validated_data"].get("titre", p["original_filename"]),
+                "type_piece": p["validated_data"].get("type_piece", "autre"),
+                "resume": p["validated_data"]
+            })
+    chronology.sort(key=lambda x: x["date"] or "9999-99-99")
+    
+    # Create PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='Title_Custom', fontName='Helvetica-Bold', fontSize=16, alignment=TA_CENTER, spaceAfter=20))
+    styles.add(ParagraphStyle(name='Subtitle', fontName='Helvetica', fontSize=10, alignment=TA_CENTER, textColor=colors.grey, spaceAfter=30))
+    styles.add(ParagraphStyle(name='Entry_Date', fontName='Helvetica-Bold', fontSize=11, textColor=colors.HexColor('#0369A1')))
+    styles.add(ParagraphStyle(name='Entry_Title', fontName='Helvetica-Bold', fontSize=10, spaceAfter=5))
+    styles.add(ParagraphStyle(name='Entry_Body', fontName='Helvetica', fontSize=9, alignment=TA_JUSTIFY, spaceAfter=3))
+    styles.add(ParagraphStyle(name='Entry_Ref', fontName='Helvetica-Oblique', fontSize=8, textColor=colors.grey, spaceAfter=15))
+    
+    elements = []
+    
+    # Header
+    elements.append(Paragraph(f"CHRONOLOGIE DES FAITS", styles['Title_Custom']))
+    elements.append(Paragraph(f"Dossier : {dossier['title']}", styles['Subtitle']))
+    elements.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles['Subtitle']))
+    elements.append(Spacer(1, 20))
+    
+    if not chronology:
+        elements.append(Paragraph("Aucune pièce validée dans ce dossier.", styles['Entry_Body']))
+    else:
+        for entry in chronology:
+            # Date
+            date_str = format_date_fr(entry["date"])
+            elements.append(Paragraph(f"• {date_str}", styles['Entry_Date']))
+            
+            # Title
+            elements.append(Paragraph(entry["titre"], styles['Entry_Title']))
+            
+            # Resume
+            resume = entry["resume"]
+            resume_parts = []
+            if resume.get("resume_qui"):
+                resume_parts.append(f"<b>Qui :</b> {resume['resume_qui']}")
+            if resume.get("resume_quoi"):
+                resume_parts.append(f"<b>Quoi :</b> {resume['resume_quoi']}")
+            if resume.get("resume_ou"):
+                resume_parts.append(f"<b>Où :</b> {resume['resume_ou']}")
+            if resume.get("resume_element_cle"):
+                resume_parts.append(f"<b>Élément clé :</b> {resume['resume_element_cle']}")
+            
+            for part in resume_parts:
+                elements.append(Paragraph(part, styles['Entry_Body']))
+            
+            # Reference
+            elements.append(Paragraph(f"Référence : Pièce {entry['numero']}", styles['Entry_Ref']))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=chronologie_{dossier_id}.pdf"}
+    )
+
+@api_router.get("/dossiers/{dossier_id}/export/docx")
+async def export_chronology_docx(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Export chronology as DOCX narrative"""
+    from docx import Document
+    from docx.shared import Pt, Inches, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    pieces = await db.pieces.find({"dossier_id": dossier_id, "status": "pret"}, {"_id": 0}).to_list(1000)
+    
+    # Build chronology
+    chronology = []
+    for p in pieces:
+        if p.get("validated_data"):
+            chronology.append({
+                "numero": p["numero"],
+                "date": p["validated_data"].get("date_document"),
+                "titre": p["validated_data"].get("titre", p["original_filename"]),
+                "type_piece": p["validated_data"].get("type_piece", "autre"),
+                "resume": p["validated_data"]
+            })
+    chronology.sort(key=lambda x: x["date"] or "9999-99-99")
+    
+    # Create DOCX
+    doc = Document()
+    
+    # Title
+    title = doc.add_heading('CHRONOLOGIE NARRATIVE DES FAITS', 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Subtitle
+    subtitle = doc.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = subtitle.add_run(f"Dossier : {dossier['title']}\nGénéré le {datetime.now().strftime('%d/%m/%Y')}")
+    run.font.size = Pt(10)
+    
+    doc.add_paragraph()
+    
+    if not chronology:
+        doc.add_paragraph("Aucune pièce validée dans ce dossier.")
+    else:
+        for entry in chronology:
+            date_str = format_date_fr(entry["date"])
+            resume = entry["resume"]
+            
+            # Build narrative paragraph
+            para = doc.add_paragraph()
+            
+            # Date in bold
+            run = para.add_run(f"Le {date_str}, ")
+            run.bold = True
+            
+            # Build narrative text
+            narrative_parts = []
+            if resume.get("resume_qui"):
+                narrative_parts.append(resume["resume_qui"])
+            if resume.get("resume_quoi"):
+                narrative_parts.append(resume["resume_quoi"].lower() if resume.get("resume_qui") else resume["resume_quoi"])
+            if resume.get("resume_ou"):
+                narrative_parts.append(f"à {resume['resume_ou']}")
+            
+            narrative = " ".join(narrative_parts) if narrative_parts else entry["titre"]
+            para.add_run(narrative)
+            
+            if resume.get("resume_element_cle"):
+                para.add_run(f". {resume['resume_element_cle']}")
+            
+            # Reference
+            ref_run = para.add_run(f" (Pièce {entry['numero']})")
+            ref_run.italic = True
+            
+            para.add_run(".")
+    
+    # Save to buffer
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=chronologie_narrative_{dossier_id}.docx"}
+    )
+
+# ===================== ASSISTANT DE RÉDACTION =====================
+
+@api_router.post("/dossiers/{dossier_id}/assistant", response_model=AssistantResponse)
+async def generate_document(dossier_id: str, request: AssistantRequest, user: dict = Depends(get_current_user)):
+    """Generate document draft based on VALIDATED pieces only"""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    # Get validated pieces only
+    query = {"dossier_id": dossier_id, "status": "pret"}
+    if request.piece_ids:
+        query["id"] = {"$in": request.piece_ids}
+    
+    pieces = await db.pieces.find(query, {"_id": 0}).sort("numero", 1).to_list(1000)
+    
+    # Filter by date if provided
+    if request.date_start or request.date_end:
+        filtered = []
+        for p in pieces:
+            date_doc = p.get("validated_data", {}).get("date_document")
+            if date_doc:
+                if request.date_start and date_doc < request.date_start:
+                    continue
+                if request.date_end and date_doc > request.date_end:
+                    continue
+            filtered.append(p)
+        pieces = filtered
+    
+    if not pieces:
+        return AssistantResponse(
+            content="Aucune pièce validée disponible pour générer ce document.",
+            pieces_used=[],
+            warnings=["Aucune pièce sélectionnée ou toutes les pièces sont encore 'à vérifier'."]
+        )
+    
+    # Build context from validated data ONLY
+    context_parts = []
+    pieces_used = []
+    for p in pieces:
+        vd = p.get("validated_data", {})
+        if vd:
+            pieces_used.append(p["numero"])
+            entry = f"""
+Pièce {p['numero']} - {vd.get('titre', p['original_filename'])}:
+- Type: {vd.get('type_piece', 'non défini')}
+- Date: {format_date_fr(vd.get('date_document'))}
+- Qui: {vd.get('resume_qui', 'Non précisé')}
+- Quoi: {vd.get('resume_quoi', 'Non précisé')}
+- Où: {vd.get('resume_ou', 'Non précisé')}
+- Élément clé: {vd.get('resume_element_cle', 'Non précisé')}
+"""
+            context_parts.append(entry)
+    
+    context = "\n".join(context_parts)
+    
+    # Document type prompts
+    prompts = {
+        "expose_faits": f"""À partir des informations VALIDÉES suivantes, rédige un exposé des faits structuré et chronologique.
+
+RÈGLES STRICTES:
+- N'invente AUCUNE information
+- Chaque fait doit citer sa source: (Pièce X)
+- Si une information manque, écris "À confirmer"
+- Style: juridique, factuel, neutre
+
+Pièces validées:
+{context}
+
+Rédige l'exposé des faits:""",
+        
+        "chronologie_narrative": f"""À partir des informations VALIDÉES suivantes, rédige une chronologie narrative.
+
+RÈGLES STRICTES:
+- Un paragraphe par événement
+- Format: "Le [date], [fait]. (Pièce X)"
+- N'invente AUCUNE information
+- Si une date est manquante, l'indiquer
+
+Pièces validées:
+{context}
+
+Rédige la chronologie narrative:""",
+        
+        "courrier_avocat": f"""À partir des informations VALIDÉES suivantes, rédige un projet de courrier pour un avocat présentant la situation.
+
+RÈGLES STRICTES:
+- Chaque fait cité doit référencer sa source: (Pièce X)
+- N'invente AUCUNE information
+- Mentionner les points nécessitant clarification
+- Style: professionnel, synthétique
+
+Pièces validées:
+{context}
+
+Rédige le projet de courrier:""",
+        
+        "requete_jaf": f"""À partir des informations VALIDÉES suivantes, rédige un projet de requête pour le Juge aux Affaires Familiales.
+
+RÈGLES STRICTES:
+- Chaque fait cité doit référencer sa source: (Pièce X)
+- N'invente AUCUNE information
+- Structure: Faits, Discussion, Par ces motifs
+- Les informations manquantes doivent être signalées avec "À confirmer"
+
+Pièces validées:
+{context}
+
+Rédige le projet de requête:"""
+    }
+    
+    prompt = prompts.get(request.document_type, prompts["expose_faits"])
+    
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        return AssistantResponse(
+            content="Service d'assistant non disponible (clé API manquante).",
+            pieces_used=pieces_used,
+            warnings=["Configuration serveur incomplète"]
+        )
+    
+    try:
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"assistant-{uuid.uuid4()}",
+            system_message="Tu es un assistant juridique. Tu rédiges des documents à partir d'informations VALIDÉES uniquement. Tu ne dois JAMAIS inventer d'information. Chaque fait doit citer sa source (Pièce X)."
+        ).with_model("gemini", "gemini-2.5-flash")
+        
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        warnings = []
+        if "À confirmer" in response:
+            warnings.append("Certaines informations nécessitent confirmation (marquées 'À confirmer').")
+        
+        return AssistantResponse(
+            content=response,
+            pieces_used=pieces_used,
+            warnings=warnings
+        )
+        
+    except Exception as e:
+        logger.error(f"Assistant error: {e}")
+        return AssistantResponse(
+            content="Erreur lors de la génération du document.",
+            pieces_used=pieces_used,
+            warnings=[str(e)]
+        )
 
 # ===================== SHARE LINKS =====================
 
@@ -643,7 +1130,7 @@ async def create_share_link(dossier_id: str, data: ShareLinkCreate, user: dict =
 
 @api_router.get("/shared/{token}")
 async def get_shared_dossier(token: str):
-    """Public endpoint for lawyers to view shared dossier"""
+    """Public endpoint for lawyers"""
     link = await db.share_links.find_one({"token": token}, {"_id": 0})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
@@ -658,20 +1145,34 @@ async def get_shared_dossier(token: str):
     
     pieces = await db.pieces.find(
         {"dossier_id": link["dossier_id"]},
-        {"_id": 0}
+        {"_id": 0, "extracted_text": 0}
     ).sort("numero", 1).to_list(1000)
+    
+    # Build chronology for shared view
+    chronology = []
+    for p in pieces:
+        if p.get("status") == "pret" and p.get("validated_data"):
+            chronology.append({
+                "numero": p["numero"],
+                "date": p["validated_data"].get("date_document"),
+                "titre": p["validated_data"].get("titre", p["original_filename"]),
+                "type_piece": p["validated_data"].get("type_piece"),
+                "resume": p["validated_data"]
+            })
+    chronology.sort(key=lambda x: x["date"] or "9999-99-99")
     
     return {
         "dossier": {
+            "id": dossier["id"],
             "title": dossier["title"],
             "description": dossier["description"]
         },
-        "pieces": [PieceResponse(**p) for p in pieces]
+        "pieces": [PieceResponse(**p) for p in pieces],
+        "chronology": chronology
     }
 
 @api_router.get("/shared/{token}/piece/{piece_id}/file")
 async def get_shared_piece_file(token: str, piece_id: str):
-    """Public endpoint for lawyers to download shared piece file"""
     link = await db.share_links.find_one({"token": token}, {"_id": 0})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
@@ -690,15 +1191,90 @@ async def get_shared_piece_file(token: str, piece_id: str):
     
     return FileResponse(filepath, filename=piece["original_filename"])
 
+@api_router.get("/shared/{token}/export/pdf")
+async def get_shared_chronology_pdf(token: str):
+    """Public endpoint - Download chronology PDF"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    
+    link = await db.share_links.find_one({"token": token}, {"_id": 0})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    
+    expires = datetime.fromisoformat(link["expires_at"])
+    if datetime.now(timezone.utc) > expires:
+        raise HTTPException(status_code=410, detail="Link expired")
+    
+    dossier = await db.dossiers.find_one({"id": link["dossier_id"]}, {"_id": 0})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    pieces = await db.pieces.find({"dossier_id": link["dossier_id"], "status": "pret"}, {"_id": 0}).to_list(1000)
+    
+    chronology = []
+    for p in pieces:
+        if p.get("validated_data"):
+            chronology.append({
+                "numero": p["numero"],
+                "date": p["validated_data"].get("date_document"),
+                "titre": p["validated_data"].get("titre", p["original_filename"]),
+                "resume": p["validated_data"]
+            })
+    chronology.sort(key=lambda x: x["date"] or "9999-99-99")
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='Title_Custom', fontName='Helvetica-Bold', fontSize=16, alignment=TA_CENTER, spaceAfter=20))
+    styles.add(ParagraphStyle(name='Subtitle', fontName='Helvetica', fontSize=10, alignment=TA_CENTER, textColor=colors.grey, spaceAfter=30))
+    styles.add(ParagraphStyle(name='Entry_Date', fontName='Helvetica-Bold', fontSize=11, textColor=colors.HexColor('#0369A1')))
+    styles.add(ParagraphStyle(name='Entry_Title', fontName='Helvetica-Bold', fontSize=10, spaceAfter=5))
+    styles.add(ParagraphStyle(name='Entry_Body', fontName='Helvetica', fontSize=9, alignment=TA_JUSTIFY, spaceAfter=3))
+    styles.add(ParagraphStyle(name='Entry_Ref', fontName='Helvetica-Oblique', fontSize=8, textColor=colors.grey, spaceAfter=15))
+    
+    elements = []
+    elements.append(Paragraph("CHRONOLOGIE DES FAITS", styles['Title_Custom']))
+    elements.append(Paragraph(f"Dossier : {dossier['title']}", styles['Subtitle']))
+    elements.append(Spacer(1, 20))
+    
+    for entry in chronology:
+        date_str = format_date_fr(entry["date"])
+        elements.append(Paragraph(f"• {date_str}", styles['Entry_Date']))
+        elements.append(Paragraph(entry["titre"], styles['Entry_Title']))
+        
+        resume = entry["resume"]
+        if resume.get("resume_qui"):
+            elements.append(Paragraph(f"<b>Qui :</b> {resume['resume_qui']}", styles['Entry_Body']))
+        if resume.get("resume_quoi"):
+            elements.append(Paragraph(f"<b>Quoi :</b> {resume['resume_quoi']}", styles['Entry_Body']))
+        if resume.get("resume_element_cle"):
+            elements.append(Paragraph(f"<b>Élément clé :</b> {resume['resume_element_cle']}", styles['Entry_Body']))
+        
+        elements.append(Paragraph(f"Référence : Pièce {entry['numero']}", styles['Entry_Ref']))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=chronologie.pdf"}
+    )
+
 # ===================== ROOT ROUTES =====================
 
 @api_router.get("/")
 async def root():
-    return {"message": "Dossier Juridique Intelligent API"}
+    return {"message": "Dossier Juridique Intelligent API", "version": "2.0"}
 
 @api_router.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "max_file_size_mb": MAX_FILE_SIZE_MB}
 
 # Include router
 app.include_router(api_router)

@@ -146,7 +146,8 @@ class ShareLinkResponse(BaseModel):
     created_at: str
 
 class AssistantRequest(BaseModel):
-    document_type: str  # expose_faits, chronologie_narrative, courrier_avocat, requete_jaf
+    document_type: str  # expose_faits, chronologie_narrative, courrier_avocat, projet_requete
+    jurisdiction: Optional[str] = None  # jaf, penal, prudhommes, administratif, civil, commercial, autre
     piece_ids: List[str] = []  # Empty = all validated pieces
     date_start: Optional[str] = None
     date_end: Optional[str] = None

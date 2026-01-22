@@ -49,7 +49,10 @@ export const dossiersApi = {
   getChronology: (id) => api.get(`/dossiers/${id}/chronology`),
   exportCsv: (id) => api.get(`/dossiers/${id}/export/csv`, { responseType: 'blob' }),
   exportZip: (id) => api.get(`/dossiers/${id}/export/zip`, { responseType: 'blob' }),
+  exportPdf: (id) => api.get(`/dossiers/${id}/export/pdf`, { responseType: 'blob' }),
+  exportDocx: (id) => api.get(`/dossiers/${id}/export/docx`, { responseType: 'blob' }),
   createShareLink: (id, data) => api.post(`/dossiers/${id}/share`, data),
+  generateAssistant: (id, data) => api.post(`/dossiers/${id}/assistant`, data),
 };
 
 // Pieces
@@ -64,6 +67,7 @@ export const piecesApi = {
     });
   },
   analyze: (id) => api.post(`/pieces/${id}/analyze`),
+  reanalyze: (id) => api.post(`/pieces/${id}/reanalyze`),
   validate: (id, data) => api.post(`/pieces/${id}/validate`, data),
   delete: (id) => api.delete(`/pieces/${id}`),
   getFileUrl: (id) => `${API_URL}/pieces/${id}/file`,
@@ -73,6 +77,7 @@ export const piecesApi = {
 export const sharedApi = {
   getDossier: (token) => axios.get(`${API_URL}/shared/${token}`),
   getPieceFileUrl: (token, pieceId) => `${API_URL}/shared/${token}/piece/${pieceId}/file`,
+  getChronologyPdfUrl: (token) => `${API_URL}/shared/${token}/export/pdf`,
 };
 
 export default api;

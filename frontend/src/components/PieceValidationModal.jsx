@@ -22,7 +22,7 @@ import {
 import { piecesApi } from '../lib/api';
 import { pieceTypeLabels, confidenceLabels, formatDate } from '../lib/utils';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, Eye, Quote } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Eye, Quote, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { format } from 'date-fns';
@@ -37,8 +37,32 @@ const pieceTypes = [
   'conclusions',
   'assignation',
   'recit',
+  'facture',
+  'contrat',
+  'jugement',
+  'ordonnance',
   'autre',
 ];
+
+const ConfidenceBadge = ({ level }) => {
+  if (!level) return null;
+  
+  const config = {
+    fort: { icon: ShieldCheck, className: 'confidence-fort', label: 'Confiance élevée' },
+    moyen: { icon: ShieldAlert, className: 'confidence-moyen', label: 'Confiance moyenne' },
+    faible: { icon: ShieldQuestion, className: 'confidence-faible', label: 'Confiance faible' },
+  };
+  
+  const cfg = config[level] || config.faible;
+  const Icon = cfg.icon;
+  
+  return (
+    <Badge variant="outline" className={`${cfg.className} text-xs flex items-center gap-1`}>
+      <Icon className="w-3 h-3" />
+      {cfg.label}
+    </Badge>
+  );
+};
 
 export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
   const proposal = piece.ai_proposal || {};
@@ -81,32 +105,23 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
     }
   };
 
-  const getConfidenceBadge = (level) => {
-    if (!level) return null;
-    return (
-      <Badge variant="outline" className={`confidence-${level} text-xs`}>
-        {confidenceLabels[level]}
-      </Badge>
-    );
-  };
-
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2">
-            Propositions IA
+            Propositions IA - Pièce {piece.numero}
             {piece.status === 'a_verifier' && (
               <Badge variant="outline" className="status-a_verifier">À vérifier</Badge>
             )}
           </DialogTitle>
           <DialogDescription>
-            Vérifiez et modifiez les informations extraites automatiquement
+            Vérifiez les informations extraites. Les niveaux de confiance et extraits justificatifs vous aident à évaluer la fiabilité.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Original filename */}
+          {/* Original filename & View button */}
           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-sm">
             <div>
               <p className="text-xs text-slate-500">Fichier original</p>
@@ -123,14 +138,18 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
             </Button>
           </div>
 
-          {/* Extract justificatif */}
+          {/* Extrait justificatif - PROMINENTLY DISPLAYED */}
           {proposal.extrait_justificatif && (
-            <div className="p-3 bg-sky-50 border border-sky-200 rounded-sm">
-              <div className="flex items-start gap-2">
-                <Quote className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+            <div className="p-4 bg-sky-50 border border-sky-200 rounded-sm">
+              <div className="flex items-start gap-3">
+                <Quote className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-medium text-sky-700 mb-1">Extrait justificatif</p>
-                  <p className="text-sm text-sky-900 italic">"{proposal.extrait_justificatif}"</p>
+                  <p className="text-xs font-semibold text-sky-700 uppercase tracking-wide mb-1">
+                    Extrait justificatif de l'analyse
+                  </p>
+                  <p className="text-sm text-sky-900 italic leading-relaxed">
+                    "{proposal.extrait_justificatif}"
+                  </p>
                 </div>
               </div>
             </div>
@@ -139,8 +158,8 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
           {/* Type de pièce */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Type de pièce</Label>
-              {getConfidenceBadge(proposal.type_confidence)}
+              <Label className="font-medium">Type de pièce</Label>
+              <ConfidenceBadge level={proposal.type_confidence} />
             </div>
             <Select
               value={formData.type_piece}
@@ -152,7 +171,7 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
               <SelectContent>
                 {pieceTypes.map((type) => (
                   <SelectItem key={type} value={type}>
-                    {pieceTypeLabels[type]}
+                    {pieceTypeLabels[type] || type}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -162,8 +181,8 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
           {/* Date du document */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Date du document</Label>
-              {getConfidenceBadge(proposal.date_confidence)}
+              <Label className="font-medium">Date du document</Label>
+              <ConfidenceBadge level={proposal.date_confidence} />
             </div>
             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
               <PopoverTrigger asChild>
@@ -192,8 +211,8 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
           {/* Titre */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Titre</Label>
-              {getConfidenceBadge(proposal.titre_confidence)}
+              <Label className="font-medium">Titre</Label>
+              <ConfidenceBadge level={proposal.titre_confidence} />
             </div>
             <Input
               value={formData.titre}
@@ -203,64 +222,66 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
             />
           </div>
 
-          {/* Résumé factuel */}
-          <div className="space-y-4 p-4 bg-slate-50 rounded-sm">
-            <h4 className="font-medium text-slate-900 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-slate-500" />
-              Résumé factuel
+          {/* Résumé factuel - Structured */}
+          <div className="space-y-4 p-4 bg-slate-50 rounded-sm border border-slate-200">
+            <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-sky-600" />
+              Résumé factuel structuré
             </h4>
             
-            <div className="space-y-2">
-              <Label>Qui ?</Label>
-              <Input
-                value={formData.resume_qui}
-                onChange={(e) => handleChange('resume_qui', e.target.value)}
-                placeholder="Personnes impliquées"
-                className="rounded-sm"
-                data-testid="resume-qui-input"
-              />
-            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs uppercase tracking-wide text-slate-500">Qui ?</Label>
+                <Input
+                  value={formData.resume_qui}
+                  onChange={(e) => handleChange('resume_qui', e.target.value)}
+                  placeholder="Personnes impliquées"
+                  className="rounded-sm"
+                  data-testid="resume-qui-input"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label>Quoi ?</Label>
-              <Textarea
-                value={formData.resume_quoi}
-                onChange={(e) => handleChange('resume_quoi', e.target.value)}
-                placeholder="Fait ou motif principal"
-                className="rounded-sm resize-none"
-                rows={2}
-                data-testid="resume-quoi-input"
-              />
-            </div>
+              <div className="space-y-1">
+                <Label className="text-xs uppercase tracking-wide text-slate-500">Quoi ?</Label>
+                <Textarea
+                  value={formData.resume_quoi}
+                  onChange={(e) => handleChange('resume_quoi', e.target.value)}
+                  placeholder="Fait ou motif principal"
+                  className="rounded-sm resize-none"
+                  rows={2}
+                  data-testid="resume-quoi-input"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label>Où ?</Label>
-              <Input
-                value={formData.resume_ou}
-                onChange={(e) => handleChange('resume_ou', e.target.value)}
-                placeholder="Lieu (si mentionné)"
-                className="rounded-sm"
-                data-testid="resume-ou-input"
-              />
-            </div>
+              <div className="space-y-1">
+                <Label className="text-xs uppercase tracking-wide text-slate-500">Où ?</Label>
+                <Input
+                  value={formData.resume_ou}
+                  onChange={(e) => handleChange('resume_ou', e.target.value)}
+                  placeholder="Lieu (si mentionné)"
+                  className="rounded-sm"
+                  data-testid="resume-ou-input"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label>Élément clé / Conséquence</Label>
-              <Textarea
-                value={formData.resume_element_cle}
-                onChange={(e) => handleChange('resume_element_cle', e.target.value)}
-                placeholder="Diagnostic, menace, refus, constat..."
-                className="rounded-sm resize-none"
-                rows={2}
-                data-testid="resume-element-cle-input"
-              />
+              <div className="space-y-1">
+                <Label className="text-xs uppercase tracking-wide text-slate-500">Élément clé / Conséquence</Label>
+                <Textarea
+                  value={formData.resume_element_cle}
+                  onChange={(e) => handleChange('resume_element_cle', e.target.value)}
+                  placeholder="Diagnostic, menace, refus, constat, montant, décision..."
+                  className="rounded-sm resize-none"
+                  rows={2}
+                  data-testid="resume-element-cle-input"
+                />
+              </div>
             </div>
           </div>
 
           {/* Mots-clés */}
           {formData.mots_cles.length > 0 && (
             <div className="space-y-2">
-              <Label>Mots-clés suggérés</Label>
+              <Label className="text-xs uppercase tracking-wide text-slate-500">Mots-clés suggérés</Label>
               <div className="flex flex-wrap gap-2">
                 {formData.mots_cles.map((mot, index) => (
                   <Badge key={index} variant="secondary" className="rounded-sm">
@@ -272,7 +293,7 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose} className="rounded-sm">
             Annuler
           </Button>

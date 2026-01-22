@@ -173,9 +173,34 @@ const DossierView = () => {
     }
   };
 
-  const copyShareLink = () => {
-    navigator.clipboard.writeText(shareLink);
-    toast.success('Lien copié');
+  const copyShareLink = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(shareLink);
+        toast.success('Lien copié');
+      } else {
+        // Fallback for older browsers or non-secure contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = shareLink;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          toast.success('Lien copié');
+        } catch (err) {
+          toast.error('Impossible de copier le lien');
+        } finally {
+          document.body.removeChild(textArea);
+        }
+      }
+    } catch (err) {
+      console.error('Copy failed:', err);
+      toast.error('Impossible de copier le lien');
+    }
   };
 
   if (loading) {

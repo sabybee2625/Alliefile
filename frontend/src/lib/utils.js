@@ -44,6 +44,10 @@ export const pieceTypeLabels = {
   conclusions: 'Conclusions',
   assignation: 'Assignation',
   recit: 'Récit',
+  facture: 'Facture',
+  contrat: 'Contrat',
+  jugement: 'Jugement',
+  ordonnance: 'Ordonnance',
   autre: 'Autre'
 };
 

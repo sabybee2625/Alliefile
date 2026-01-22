@@ -1013,7 +1013,20 @@ Pièce {p['numero']} - {vd.get('titre', p['original_filename'])}:
     
     context = "\n".join(context_parts)
     
-    # Document type prompts
+    # Labels for jurisdictions
+    jurisdiction_labels = {
+        "jaf": "Juge aux Affaires Familiales (JAF)",
+        "penal": "Pénal",
+        "prudhommes": "Prud'hommes",
+        "administratif": "Administratif",
+        "civil": "Civil (Tribunal judiciaire)",
+        "commercial": "Commercial",
+        "autre": "Juridiction à préciser"
+    }
+    
+    jurisdiction_label = jurisdiction_labels.get(request.jurisdiction, "Juridiction à préciser") if request.jurisdiction else None
+    
+    # Document type prompts (agnostique du contentieux)
     prompts = {
         "expose_faits": f"""À partir des informations VALIDÉES suivantes, rédige un exposé des faits structuré et chronologique.
 
@@ -1054,18 +1067,22 @@ Pièces validées:
 
 Rédige le projet de courrier:""",
         
-        "requete_jaf": f"""À partir des informations VALIDÉES suivantes, rédige un projet de requête pour le Juge aux Affaires Familiales.
+        "projet_requete": f"""À partir des informations VALIDÉES suivantes, rédige un projet de requête.
+
+JURIDICTION CIBLÉE: {jurisdiction_label}
 
 RÈGLES STRICTES:
+- Commence par "PROJET DE REQUÊTE – {jurisdiction_label}"
 - Chaque fait cité doit référencer sa source: (Pièce X)
 - N'invente AUCUNE information
-- Structure: Faits, Discussion, Par ces motifs
+- Structure adaptée à la juridiction: Faits, Discussion, Par ces motifs (ou structure équivalente selon la juridiction)
 - Les informations manquantes doivent être signalées avec "À confirmer"
+- Reste factuel et neutre, les faits proviennent uniquement des pièces validées
 
 Pièces validées:
 {context}
 
-Rédige le projet de requête:"""
+Rédige le projet de requête pour la juridiction {jurisdiction_label}:"""
     }
     
     prompt = prompts.get(request.document_type, prompts["expose_faits"])

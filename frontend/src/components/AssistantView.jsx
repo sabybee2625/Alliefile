@@ -14,8 +14,8 @@ import {
 } from './ui/select';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { dossiersApi, piecesApi } from '../lib/api';
-import { formatDate, pieceTypeLabels, downloadBlob } from '../lib/utils';
+import { dossiersApi } from '../lib/api';
+import { formatDate, downloadBlob } from '../lib/utils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -29,17 +29,31 @@ import {
   AlertTriangle,
   CheckCircle,
   Info,
+  Scale,
 } from 'lucide-react';
 
+// Types de documents génériques (sans référence JAF codée en dur)
 const documentTypes = [
   { value: 'expose_faits', label: 'Exposé des faits', description: 'Document factuel chronologique' },
   { value: 'chronologie_narrative', label: 'Chronologie narrative', description: 'Texte rédigé avec dates et références' },
   { value: 'courrier_avocat', label: 'Courrier à un avocat', description: 'Projet de courrier présentant la situation' },
-  { value: 'requete_jaf', label: 'Projet requête JAF', description: 'Projet de requête pour le Juge aux Affaires Familiales' },
+  { value: 'projet_requete', label: 'Projet de requête', description: 'Projet de requête (juridiction à préciser)' },
+];
+
+// Types de juridictions
+const jurisdictionTypes = [
+  { value: 'jaf', label: 'Juge aux Affaires Familiales (JAF)' },
+  { value: 'penal', label: 'Pénal' },
+  { value: 'prudhommes', label: 'Prud\'hommes' },
+  { value: 'administratif', label: 'Administratif' },
+  { value: 'civil', label: 'Civil (Tribunal judiciaire)' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'autre', label: 'Autre / Libre' },
 ];
 
 export const AssistantView = ({ dossierId, pieces = [] }) => {
   const [documentType, setDocumentType] = useState('expose_faits');
+  const [jurisdiction, setJurisdiction] = useState('');
   const [dateStart, setDateStart] = useState(null);
   const [dateEnd, setDateEnd] = useState(null);
   const [selectedPieces, setSelectedPieces] = useState([]);
@@ -51,15 +65,30 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
   // Filter only validated pieces
   const validatedPieces = pieces.filter(p => p.status === 'pret');
 
+  // Show jurisdiction selector only for projet_requete
+  const showJurisdiction = documentType === 'projet_requete';
+
   useEffect(() => {
     if (selectAll) {
       setSelectedPieces(validatedPieces.map(p => p.id));
     }
   }, [selectAll, pieces]);
 
+  // Reset jurisdiction when document type changes
+  useEffect(() => {
+    if (documentType !== 'projet_requete') {
+      setJurisdiction('');
+    }
+  }, [documentType]);
+
   const handleGenerate = async () => {
     if (!selectAll && selectedPieces.length === 0) {
       toast.error('Sélectionnez au moins une pièce');
+      return;
+    }
+
+    if (documentType === 'projet_requete' && !jurisdiction) {
+      toast.error('Veuillez sélectionner une juridiction pour le projet de requête');
       return;
     }
 
@@ -69,6 +98,7 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
     try {
       const res = await dossiersApi.generateAssistant(dossierId, {
         document_type: documentType,
+        jurisdiction: jurisdiction || null,
         piece_ids: selectAll ? [] : selectedPieces,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
         date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null,
@@ -102,10 +132,14 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
 
   const handleExportDocx = async () => {
     try {
-      // Create a simple DOCX-like blob (text file that Word can open)
-      const blob = new Blob([editedContent], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const blob = new Blob([editedContent], { type: 'text/plain' });
       const docType = documentTypes.find(d => d.value === documentType);
-      downloadBlob(blob, `${docType?.label || 'document'}.txt`);
+      let filename = docType?.label || 'document';
+      if (jurisdiction) {
+        const jurisdictionLabel = jurisdictionTypes.find(j => j.value === jurisdiction)?.label || jurisdiction;
+        filename += ` - ${jurisdictionLabel}`;
+      }
+      downloadBlob(blob, `${filename}.txt`);
       toast.success('Document téléchargé');
     } catch {
       toast.error('Erreur lors du téléchargement');
@@ -119,6 +153,15 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
         ? prev.filter(id => id !== pieceId)
         : [...prev, pieceId]
     );
+  };
+
+  const getDocumentTitle = () => {
+    const docType = documentTypes.find(d => d.value === documentType);
+    if (documentType === 'projet_requete' && jurisdiction) {
+      const jurisdictionLabel = jurisdictionTypes.find(j => j.value === jurisdiction)?.label || jurisdiction;
+      return `Projet de requête – ${jurisdictionLabel}`;
+    }
+    return docType?.label || 'Document';
   };
 
   if (validatedPieces.length === 0) {
@@ -180,6 +223,31 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Jurisdiction Selector - Only for projet_requete */}
+            {showJurisdiction && (
+              <div className="space-y-2 p-3 bg-slate-50 rounded-sm border border-slate-200">
+                <Label className="flex items-center gap-2">
+                  <Scale className="w-4 h-4 text-slate-600" />
+                  Juridiction *
+                </Label>
+                <Select value={jurisdiction} onValueChange={setJurisdiction}>
+                  <SelectTrigger className="rounded-sm" data-testid="jurisdiction-select">
+                    <SelectValue placeholder="Sélectionner la juridiction" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jurisdictionTypes.map(jt => (
+                      <SelectItem key={jt.value} value={jt.value}>
+                        {jt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  Le choix de juridiction influence uniquement le cadre rédactionnel, pas les faits.
+                </p>
+              </div>
+            )}
 
             {/* Date Range */}
             <div className="space-y-2">
@@ -270,7 +338,7 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
             {/* Generate Button */}
             <Button 
               onClick={handleGenerate}
-              disabled={generating || (!selectAll && selectedPieces.length === 0)}
+              disabled={generating || (!selectAll && selectedPieces.length === 0) || (showJurisdiction && !jurisdiction)}
               className="w-full bg-slate-900 hover:bg-slate-800 rounded-sm"
               data-testid="generate-btn"
             >
@@ -294,7 +362,7 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="font-heading text-lg">
-                {result ? documentTypes.find(d => d.value === documentType)?.label : 'Résultat'}
+                {result ? getDocumentTitle() : 'Résultat'}
               </CardTitle>
               {result && (
                 <div className="flex items-center gap-2">
@@ -336,6 +404,11 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
                 <p className="text-sm text-center">
                   Configurez les options et cliquez sur "Générer" pour créer un brouillon.
                 </p>
+                {showJurisdiction && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    N'oubliez pas de sélectionner la juridiction pour un projet de requête.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

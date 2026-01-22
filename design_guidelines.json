@@ -1,0 +1,113 @@
+{
+  "identity": {
+    "name": "Smart Legal Dossier",
+    "persona": "E1 - The Anti-AI Designer",
+    "tone": "Swiss Minimalist, Professional, Trustworthy, Architectural",
+    "principles": [
+      "Fusion over Imitation: Swiss Design x Architectural Blueprints",
+      "Emotion First: Trust and Clarity",
+      "Content is King: Data is the hero",
+      "Negative Space: Breathable layouts",
+      "Contrast: High contrast for readability"
+    ]
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Archivo, sans-serif",
+      "weights": ["600", "700", "900"],
+      "usage": "All headings (h1-h6). Use tight tracking (-0.02em).",
+      "import_url": "https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap"
+    },
+    "body": {
+      "font_family": "Inter, sans-serif",
+      "weights": ["300", "400", "500", "600"],
+      "usage": "Body text, inputs, buttons, data tables."
+    },
+    "mono": {
+      "font_family": "JetBrains Mono, monospace",
+      "usage": "Reference numbers, dates, technical data."
+    }
+  },
+  "colors": {
+    "theme": "light",
+    "palette": {
+      "primary": "#0F172A",
+      "primary_foreground": "#F8FAFC",
+      "secondary": "#0369A1",
+      "secondary_foreground": "#FFFFFF",
+      "background": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "border": "#E2E8F0",
+      "muted": "#F1F5F9",
+      "muted_foreground": "#64748B",
+      "accent": "#0EA5E9",
+      "destructive": "#EF4444",
+      "success": "#10B981",
+      "warning": "#F59E0B"
+    },
+    "gradients": "NONE. Solid colors only."
+  },
+  "layout": {
+    "spacing_scale": "Generous. Use p-6, p-8, p-12 for containers.",
+    "grid_system": {
+      "dashboard": "Bento Grid Mode B (High Density). grid-cols-1 md:grid-cols-3 lg:grid-cols-4. Gap-4.",
+      "landing": "Bento Grid Mode A (Asymmetric). grid-cols-1 md:grid-cols-12. Gap-8."
+    },
+    "containers": {
+      "card": "bg-white border border-slate-200 shadow-sm rounded-sm",
+      "main": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "Sharp edges or very small radius (rounded-sm). High contrast.",
+      "primary": "bg-slate-900 text-white hover:bg-slate-800",
+      "secondary": "bg-white text-slate-900 border border-slate-200 hover:bg-slate-50"
+    },
+    "inputs": {
+      "style": "bg-white border-slate-200 focus:ring-2 focus:ring-slate-900 rounded-sm"
+    },
+    "cards": {
+      "style": "Flat, white background, subtle 1px border. No massive shadows."
+    },
+    "status_badges": {
+      "style": "Pill shaped or rectangular with rounded-sm. Soft background, dark text."
+    }
+  },
+  "visual_enhancers": {
+    "textures": "Subtle noise/grain on the main background to reduce digital flatness.",
+    "borders": "1px solid borders. Use 'border-slate-200' for structure.",
+    "shadows": "Minimal. 'shadow-sm' or 'shadow-none'.",
+    "icons": "Lucide React. Stroke width 1.5px for elegance."
+  },
+  "images": {
+    "landing_hero": {
+      "url": "https://images.pexels.com/photos/19238352/pexels-photo-19238352.jpeg",
+      "alt": "Minimalist modern lawyer desk with organized documents",
+      "category": "hero"
+    },
+    "about_section": {
+      "url": "https://images.pexels.com/photos/19238353/pexels-photo-19238353.jpeg",
+      "alt": "Professional legal workspace",
+      "category": "content"
+    }
+  },
+  "instructions_to_main_agent": [
+    "INSTALL FONTS: Add the Google Fonts import link to public/index.html or src/index.css immediately.",
+    "THEME SETUP: Ensure tailwind.config.js uses the specific Slate (#0F172A) and Sky (#0369A1) colors defined.",
+    "NO GRADIENTS: Do not use bg-gradient-to-r or similar. Use solid blocks of color.",
+    "SHARP UI: Use 'rounded-sm' or 'rounded-none' for a professional, Swiss-style look. Avoid 'rounded-xl' or 'rounded-2xl'.",
+    "DENSITY: The dashboard should be information-dense but readable. Use 'text-sm' for data tables.",
+    "TESTING: Add 'data-testid' to all interactive elements.",
+    "DO NOT use 'Inter' for headings. Use 'Archivo'.",
+    "USE 'sonner' for toasts.",
+    "USE 'recharts' for any data visualization (timeline, stats)."
+  ],
+  "universal_guidelines": [
+    "Avoid generic 'AI slop' designs.",
+    "Create depth through z-index and subtle borders, not heavy shadows.",
+    "Micro-animations on hover are mandatory.",
+    "Use 2-3x more spacing than typical for layout containers.",
+    "Never use transparent backgrounds for dropdowns or headers with content underneath."
+  ]
+}

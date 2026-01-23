@@ -177,6 +177,13 @@ class DuplicateCheckResponse(BaseModel):
     is_duplicate: bool
     existing_piece_id: Optional[str] = None
     existing_piece_numero: Optional[int] = None
+    existing_filename: Optional[str] = None
+
+class DuplicateErrorDetail(BaseModel):
+    message: str
+    existing_piece_id: str
+    existing_piece_numero: int
+    existing_filename: str
 
 class QueueAnalysisRequest(BaseModel):
     piece_ids: List[str] = []  # Empty = all pending pieces

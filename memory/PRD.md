@@ -28,6 +28,31 @@ Application web de dossier juridique intelligent destinée à organiser, compren
 
 ## What's Been Implemented
 
+### V3.1 - Correctifs Critiques (Jan 2025)
+
+#### A) Prévisualisation dans la validation ✅ (FIXED)
+- [x] Bouton "Voir" dans `PieceValidationModal` utilise maintenant `FilePreviewModal`
+- [x] PDF/images : prévisualisation inline
+- [x] DOCX : message "prévisualisation non disponible" + bouton "Télécharger"
+- [x] Accès au fichier original pendant la validation sans quitter le modal
+
+#### B) Détection de doublons améliorée ✅ (FIXED)
+- [x] Hash SHA256 calculé sur les bytes bruts du fichier
+- [x] Vérification doublon basée sur (dossier_id, file_hash, file_size)
+- [x] HTTP 409 avec détails: `{existing_piece_id, existing_piece_numero, existing_filename}`
+- [x] **Modale "Doublon détecté"** dans le frontend avec:
+  - "Pièce X : nom_fichier.ext" (pièce existante)
+  - Bouton "Annuler (ne pas importer)" (par défaut)
+  - Bouton "Importer quand même" (force_upload=true)
+- [x] Index MongoDB pour performance
+
+#### C) Upload DOCX corrigé ✅ (FIXED)
+- [x] Le fichier est lu UNE SEULE fois avec `await file.read()`
+- [x] Taille vérifiée: `file_size = len(content)` stockée en DB
+- [x] Fichiers vides (0 bytes) rejetés avec HTTP 400
+- [x] Vérification post-écriture: taille sur disque == taille en mémoire
+- [x] Téléchargement retourne le fichier identique (hash SHA256 vérifié)
+
 ### V3 - Phase 4 Bug Fixes (Jan 2025)
 
 #### P0 - Téléchargement & Prévisualisation Sécurisés ✅

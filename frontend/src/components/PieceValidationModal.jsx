@@ -24,6 +24,7 @@ import { pieceTypeLabels, confidenceLabels, formatDate } from '../lib/utils';
 import { toast } from 'sonner';
 import { Loader2, AlertCircle, CheckCircle, Eye, Quote, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { DateInput } from './DateInput';
+import { FilePreviewModal } from './FilePreviewModal';
 
 const pieceTypes = [
   'plainte',

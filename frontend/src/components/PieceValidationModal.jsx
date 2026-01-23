@@ -23,10 +23,7 @@ import { piecesApi } from '../lib/api';
 import { pieceTypeLabels, confidenceLabels, formatDate } from '../lib/utils';
 import { toast } from 'sonner';
 import { Loader2, AlertCircle, CheckCircle, Eye, Quote, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
-import { Calendar } from './ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { DateInput } from './DateInput';
 
 const pieceTypes = [
   'plainte',

@@ -76,17 +76,9 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
   });
   
   const [saving, setSaving] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleDateSelect = (date) => {
-    if (date) {
-      handleChange('date_document', format(date, 'yyyy-MM-dd'));
-    }
-    setCalendarOpen(false);
   };
 
   const handleSubmit = async () => {

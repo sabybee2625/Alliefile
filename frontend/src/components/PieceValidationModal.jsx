@@ -121,13 +121,22 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => window.open(piecesApi.getFileUrl(piece.id), '_blank')}
+              onClick={() => setShowPreview(true)}
               className="rounded-sm"
+              data-testid="view-original-file"
             >
               <Eye className="w-4 h-4 mr-1" />
               Voir
             </Button>
           </div>
+
+          {/* File Preview Modal */}
+          {showPreview && (
+            <FilePreviewModal
+              piece={piece}
+              onClose={() => setShowPreview(false)}
+            />
+          )}
 
           {/* Extrait justificatif - PROMINENTLY DISPLAYED */}
           {proposal.extrait_justificatif && (

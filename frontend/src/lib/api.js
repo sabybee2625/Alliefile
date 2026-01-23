@@ -77,12 +77,28 @@ export const piecesApi = {
     return api.get(`/dossiers/${dossierId}/pieces?${params.toString()}`);
   },
   get: (id) => api.get(`/pieces/${id}`),
-  upload: (dossierId, file, forceUpload = false) => {
+  upload: async (dossierId, file, forceUpload = false) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post(`/dossiers/${dossierId}/pieces?force_upload=${forceUpload}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    try {
+      return await api.post(`/dossiers/${dossierId}/pieces?force_upload=${forceUpload}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    } catch (error) {
+      // Enrich error with duplicate details if 409
+      if (error.response?.status === 409) {
+        const detail = error.response.data?.detail;
+        if (typeof detail === 'object') {
+          error.duplicateInfo = {
+            existingPieceId: detail.existing_piece_id,
+            existingPieceNumero: detail.existing_piece_numero,
+            existingFilename: detail.existing_filename,
+            message: detail.message,
+          };
+        }
+      }
+      throw error;
+    }
   },
   analyze: (id) => api.post(`/pieces/${id}/analyze`),
   reanalyze: (id) => api.post(`/pieces/${id}/reanalyze`),

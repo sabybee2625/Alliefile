@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { Checkbox } from '../components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
   Dialog,
@@ -11,6 +12,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '../components/ui/dialog';
 import {
   DropdownMenu,
@@ -51,15 +53,25 @@ import {
   RefreshCw,
   PenTool,
   AlertCircle,
+  XCircle,
+  PlayCircle,
+  CheckSquare,
+  Square,
+  Filter,
+  AlertTriangle,
+  Image,
+  FileQuestion,
 } from 'lucide-react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { PieceValidationModal } from '../components/PieceValidationModal';
 import { ChronologyView } from '../components/ChronologyView';
 import { AssistantView } from '../components/AssistantView';
+import { FilePreviewModal } from '../components/FilePreviewModal';
 
 // Analysis status labels
 const analysisStatusLabels = {
   pending: 'En attente',
+  queued: 'En file d\'attente',
   analyzing: 'Analyse en cours',
   complete: 'Analysé',
   error: 'Erreur',
@@ -67,6 +79,7 @@ const analysisStatusLabels = {
 
 const analysisStatusColors = {
   pending: 'bg-slate-100 text-slate-600',
+  queued: 'bg-purple-100 text-purple-600',
   analyzing: 'bg-blue-100 text-blue-600',
   complete: 'bg-emerald-100 text-emerald-600',
   error: 'bg-red-100 text-red-600',
@@ -85,6 +98,23 @@ const DossierView = () => {
   const [deleting, setDeleting] = useState(false);
   const [shareLink, setShareLink] = useState(null);
   const [creatingShare, setCreatingShare] = useState(false);
+  
+  // Selection state
+  const [selectedPieces, setSelectedPieces] = useState([]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
+  
+  // Queue state
+  const [queueStatus, setQueueStatus] = useState(null);
+  const [processingQueue, setProcessingQueue] = useState(false);
+  const queueIntervalRef = useRef(null);
+  
+  // Preview state
+  const [previewPiece, setPreviewPiece] = useState(null);
+  
+  // Filter state
+  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -101,17 +131,80 @@ const DossierView = () => {
     }
   }, [id]);
 
+  const fetchQueueStatus = useCallback(async () => {
+    try {
+      const res = await dossiersApi.getQueueStatus(id);
+      setQueueStatus(res.data);
+      
+      // If there are items in queue or analyzing, keep processing
+      if (res.data.queued > 0 || res.data.analyzing > 0) {
+        // Auto-process queue
+        if (!processingQueue) {
+          setProcessingQueue(true);
+          try {
+            await dossiersApi.processQueue(id);
+            fetchData(); // Refresh pieces
+          } finally {
+            setProcessingQueue(false);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Queue status error:', error);
+    }
+  }, [id, processingQueue, fetchData]);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const handleUpload = async (files) => {
+  // Poll queue status when there's activity
+  useEffect(() => {
+    if (queueStatus && (queueStatus.queued > 0 || queueStatus.analyzing > 0)) {
+      queueIntervalRef.current = setInterval(() => {
+        fetchQueueStatus();
+        fetchData();
+      }, 3000);
+    } else {
+      if (queueIntervalRef.current) {
+        clearInterval(queueIntervalRef.current);
+      }
+    }
+    
+    return () => {
+      if (queueIntervalRef.current) {
+        clearInterval(queueIntervalRef.current);
+      }
+    };
+  }, [queueStatus, fetchQueueStatus, fetchData]);
+
+  const handleUpload = async (files, forceUpload = false) => {
     setUploading(true);
+    let uploaded = 0;
+    let duplicates = 0;
+    
     try {
       for (const file of files) {
-        await piecesApi.upload(id, file);
+        try {
+          await piecesApi.upload(id, file, forceUpload);
+          uploaded++;
+        } catch (error) {
+          if (error.response?.status === 409) {
+            duplicates++;
+            toast.error(`Doublon détecté: ${file.name}`);
+          } else {
+            throw error;
+          }
+        }
       }
-      toast.success(`${files.length} fichier${files.length > 1 ? 's' : ''} uploadé${files.length > 1 ? 's' : ''}`);
+      
+      if (uploaded > 0) {
+        toast.success(`${uploaded} fichier${uploaded > 1 ? 's' : ''} uploadé${uploaded > 1 ? 's' : ''}`);
+      }
+      if (duplicates > 0) {
+        toast.warning(`${duplicates} doublon${duplicates > 1 ? 's' : ''} ignoré${duplicates > 1 ? 's' : ''}`);
+      }
+      
       setUploadOpen(false);
       fetchData();
     } catch (error) {
@@ -125,6 +218,39 @@ const DossierView = () => {
     }
   };
 
+  const handleAnalyzeAll = async () => {
+    try {
+      const pendingPieces = pieces.filter(p => 
+        p.analysis_status === 'pending' || p.analysis_status === 'error'
+      );
+      
+      if (pendingPieces.length === 0) {
+        toast.info('Aucune pièce à analyser');
+        return;
+      }
+      
+      const res = await dossiersApi.queueAnalysis(id);
+      toast.success(res.data.message);
+      
+      // Start processing
+      await fetchQueueStatus();
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de la mise en file d\'attente');
+    }
+  };
+
+  const handleRetryFailed = async () => {
+    try {
+      const res = await dossiersApi.queueFailed(id);
+      toast.success(res.data.message);
+      await fetchQueueStatus();
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur');
+    }
+  };
+
   const handleAnalyze = async (pieceId) => {
     setAnalyzing((prev) => ({ ...prev, [pieceId]: true }));
     try {
@@ -132,7 +258,11 @@ const DossierView = () => {
       toast.success('Analyse terminée');
       fetchData();
     } catch (error) {
-      toast.error('Erreur lors de l\'analyse');
+      if (error.response?.status === 429) {
+        toast.warning('Veuillez patienter avant de relancer');
+      } else {
+        toast.error('Erreur lors de l\'analyse');
+      }
     } finally {
       setAnalyzing((prev) => ({ ...prev, [pieceId]: false }));
     }
@@ -145,7 +275,11 @@ const DossierView = () => {
       toast.success('Ré-analyse terminée');
       fetchData();
     } catch (error) {
-      toast.error('Erreur lors de la ré-analyse');
+      if (error.response?.status === 429) {
+        toast.warning('Veuillez patienter avant de relancer');
+      } else {
+        toast.error('Erreur lors de la ré-analyse');
+      }
     } finally {
       setAnalyzing((prev) => ({ ...prev, [pieceId]: false }));
     }
@@ -163,6 +297,33 @@ const DossierView = () => {
       toast.error('Erreur lors de la suppression');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedPieces.length === 0) return;
+    setDeleting(true);
+    try {
+      const res = await piecesApi.deleteMany(id, selectedPieces);
+      toast.success(res.data.message);
+      setSelectedPieces([]);
+      setSelectMode(false);
+      setDeleteSelectedOpen(false);
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de la suppression');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteErrors = async () => {
+    try {
+      const res = await piecesApi.deleteErrors(id);
+      toast.success(res.data.message);
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur');
     }
   };
 
@@ -221,6 +382,26 @@ const DossierView = () => {
     }
   };
 
+  const togglePieceSelection = (pieceId) => {
+    setSelectedPieces(prev => 
+      prev.includes(pieceId) 
+        ? prev.filter(id => id !== pieceId)
+        : [...prev, pieceId]
+    );
+  };
+
+  const selectAllPieces = () => {
+    setSelectedPieces(filteredPieces.map(p => p.id));
+  };
+
+  const deselectAllPieces = () => {
+    setSelectedPieces([]);
+  };
+
+  const handleViewFile = async (piece) => {
+    setPreviewPiece(piece);
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -244,8 +425,19 @@ const DossierView = () => {
     );
   }
 
+  // Apply filters
+  let filteredPieces = pieces;
+  if (showDuplicates) {
+    filteredPieces = pieces.filter(p => p.is_duplicate);
+  } else if (showErrors) {
+    filteredPieces = pieces.filter(p => p.analysis_status === 'error');
+  }
+
   const toVerifyCount = pieces.filter((p) => p.status === 'a_verifier').length;
   const readyCount = pieces.filter((p) => p.status === 'pret').length;
+  const errorCount = pieces.filter((p) => p.analysis_status === 'error').length;
+  const duplicateCount = pieces.filter((p) => p.is_duplicate).length;
+  const pendingAnalysis = pieces.filter((p) => p.analysis_status === 'pending' || p.analysis_status === 'queued').length;
 
   return (
     <Layout>
@@ -352,7 +544,7 @@ const DossierView = () => {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="border-slate-200">
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
@@ -392,7 +584,38 @@ const DossierView = () => {
               </div>
             </CardContent>
           </Card>
+          <Card className="border-slate-200">
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-sm flex items-center justify-center">
+                  <XCircle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-heading font-bold text-slate-900">{errorCount}</p>
+                  <p className="text-xs text-slate-500">Erreurs</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Queue Status Banner */}
+        {queueStatus && (queueStatus.queued > 0 || queueStatus.analyzing > 0) && (
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                  <span className="text-sm text-blue-800">
+                    <strong>{queueStatus.analyzing}</strong> analyse(s) en cours, 
+                    <strong> {queueStatus.queued}</strong> en file d'attente
+                  </span>
+                </div>
+                <span className="text-xs text-blue-600">Actualisation automatique...</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="pieces" className="space-y-4">
@@ -407,40 +630,184 @@ const DossierView = () => {
 
           {/* PIECES TAB */}
           <TabsContent value="pieces" className="space-y-4">
+            {/* Actions Bar */}
             {pieces.length > 0 && (
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={handleRenumber} className="rounded-sm" data-testid="renumber-btn">
-                  <ListOrdered className="w-4 h-4 mr-2" />
-                  Renuméroter
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  {/* Selection Mode Toggle */}
+                  <Button
+                    variant={selectMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectMode(!selectMode);
+                      if (selectMode) setSelectedPieces([]);
+                    }}
+                    className="rounded-sm"
+                  >
+                    {selectMode ? <CheckSquare className="w-4 h-4 mr-1" /> : <Square className="w-4 h-4 mr-1" />}
+                    Sélection
+                  </Button>
+                  
+                  {selectMode && (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={selectAllPieces}>
+                        Tout sélectionner
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={deselectAllPieces}>
+                        Désélectionner
+                      </Button>
+                      {selectedPieces.length > 0 && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setDeleteSelectedOpen(true)}
+                          className="rounded-sm"
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Supprimer ({selectedPieces.length})
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  
+                  {/* Filters */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="rounded-sm">
+                        <Filter className="w-4 h-4 mr-1" />
+                        Filtrer
+                        {(showDuplicates || showErrors) && (
+                          <Badge variant="secondary" className="ml-1 text-xs">{showDuplicates ? duplicateCount : errorCount}</Badge>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem onClick={() => { setShowDuplicates(false); setShowErrors(false); }}>
+                        Toutes les pièces
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => { setShowDuplicates(true); setShowErrors(false); }}>
+                        <AlertTriangle className="w-4 h-4 mr-2 text-amber-500" />
+                        Doublons ({duplicateCount})
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setShowErrors(true); setShowDuplicates(false); }}>
+                        <XCircle className="w-4 h-4 mr-2 text-red-500" />
+                        Erreurs ({errorCount})
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  {/* Analyze All Button */}
+                  {pendingAnalysis > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAnalyzeAll}
+                      className="rounded-sm bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100"
+                      data-testid="analyze-all-btn"
+                    >
+                      <PlayCircle className="w-4 h-4 mr-1" />
+                      Analyser tout ({pendingAnalysis})
+                    </Button>
+                  )}
+                  
+                  {/* Retry Failed Button */}
+                  {errorCount > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRetryFailed}
+                      className="rounded-sm text-amber-700"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Relancer échecs ({errorCount})
+                    </Button>
+                  )}
+                  
+                  {/* Delete Errors Button */}
+                  {errorCount > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDeleteErrors}
+                      className="rounded-sm text-red-600"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Supprimer erreurs
+                    </Button>
+                  )}
+                  
+                  <Button variant="outline" size="sm" onClick={handleRenumber} className="rounded-sm" data-testid="renumber-btn">
+                    <ListOrdered className="w-4 h-4 mr-2" />
+                    Renuméroter
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Filter indicator */}
+            {(showDuplicates || showErrors) && (
+              <div className="flex items-center gap-2 p-2 bg-slate-100 rounded-sm">
+                <span className="text-sm text-slate-600">
+                  Filtre actif: {showDuplicates ? 'Doublons' : 'Erreurs'}
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => { setShowDuplicates(false); setShowErrors(false); }}
+                >
+                  Effacer
                 </Button>
               </div>
             )}
 
-            {pieces.length === 0 ? (
+            {filteredPieces.length === 0 ? (
               <Card className="border-slate-200 border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                     <FileText className="w-8 h-8 text-slate-400" />
                   </div>
-                  <h3 className="font-heading font-semibold text-slate-900 mb-1">Aucune pièce</h3>
-                  <p className="text-sm text-slate-500 mb-4">Ajoutez votre première pièce au dossier</p>
-                  <Button onClick={() => setUploadOpen(true)} className="bg-slate-900 hover:bg-slate-800 rounded-sm">
-                    <Upload className="w-4 h-4 mr-2" />
-                    Ajouter une pièce
-                  </Button>
+                  <h3 className="font-heading font-semibold text-slate-900 mb-1">
+                    {(showDuplicates || showErrors) ? 'Aucune pièce correspondante' : 'Aucune pièce'}
+                  </h3>
+                  <p className="text-sm text-slate-500 mb-4">
+                    {(showDuplicates || showErrors) 
+                      ? 'Aucune pièce ne correspond au filtre sélectionné'
+                      : 'Ajoutez votre première pièce au dossier'
+                    }
+                  </p>
+                  {!(showDuplicates || showErrors) && (
+                    <Button onClick={() => setUploadOpen(true)} className="bg-slate-900 hover:bg-slate-800 rounded-sm">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Ajouter une pièce
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-3">
-                {pieces.map((piece, index) => (
+                {filteredPieces.map((piece, index) => (
                   <Card
                     key={piece.id}
-                    className="border-slate-200 card-hover animate-fade-in"
+                    className={`border-slate-200 card-hover animate-fade-in ${
+                      selectedPieces.includes(piece.id) ? 'ring-2 ring-sky-500 border-sky-500' : ''
+                    } ${piece.is_duplicate ? 'border-amber-300 bg-amber-50/50' : ''}`}
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <CardContent className="py-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4">
+                          {/* Selection Checkbox */}
+                          {selectMode && (
+                            <Checkbox
+                              checked={selectedPieces.includes(piece.id)}
+                              onCheckedChange={() => togglePieceSelection(piece.id)}
+                              className="mt-3"
+                            />
+                          )}
+                          
                           <div className="w-12 h-12 bg-slate-100 rounded-sm flex items-center justify-center flex-shrink-0">
                             <span className="font-mono font-semibold text-slate-700">{piece.numero}</span>
                           </div>
@@ -456,6 +823,12 @@ const DossierView = () => {
                                 <Badge variant="outline" className={`text-xs ${analysisStatusColors[piece.analysis_status]}`}>
                                   {piece.analysis_status === 'analyzing' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
                                   {analysisStatusLabels[piece.analysis_status]}
+                                </Badge>
+                              )}
+                              {piece.is_duplicate && (
+                                <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-300">
+                                  <AlertTriangle className="w-3 h-3 mr-1" />
+                                  Doublon
                                 </Badge>
                               )}
                             </div>
@@ -475,10 +848,21 @@ const DossierView = () => {
                                 </span>
                               )}
                             </div>
+                            
+                            {/* Error message */}
+                            {piece.analysis_status === 'error' && piece.analysis_error && (
+                              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-sm">
+                                <p className="text-xs text-red-700 flex items-start gap-1">
+                                  <XCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                  {piece.analysis_error}
+                                </p>
+                              </div>
+                            )}
+                            
                             {piece.validated_data?.resume_quoi && (
                               <p className="text-sm text-slate-600 mt-2 line-clamp-2">{piece.validated_data.resume_quoi}</p>
                             )}
-                            {/* Show confidence indicator when AI proposal exists */}
+                            
                             {piece.ai_proposal && !piece.validated_data && (
                               <div className="mt-2 flex items-center gap-2 text-xs">
                                 <AlertCircle className="w-3 h-3 text-amber-500" />
@@ -488,7 +872,19 @@ const DossierView = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {!piece.ai_proposal && piece.status === 'a_verifier' && (
+                          {/* View File Button */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleViewFile(piece)}
+                            className="rounded-sm"
+                            data-testid={`view-file-${index}`}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            Voir
+                          </Button>
+                          
+                          {!piece.ai_proposal && piece.status === 'a_verifier' && piece.analysis_status !== 'analyzing' && (
                             <Button
                               size="sm"
                               onClick={() => handleAnalyze(piece.id)}
@@ -522,9 +918,13 @@ const DossierView = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => window.open(piecesApi.getFileUrl(piece.id), '_blank')}>
+                              <DropdownMenuItem onClick={() => handleViewFile(piece)}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 Voir le fichier
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => piecesApi.downloadFile(piece.id, piece.original_filename)}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Télécharger
                               </DropdownMenuItem>
                               {piece.ai_proposal && (
                                 <DropdownMenuItem onClick={() => setValidationPiece(piece)}>
@@ -573,7 +973,8 @@ const DossierView = () => {
           <DialogHeader>
             <DialogTitle className="font-heading">Ajouter une pièce</DialogTitle>
             <DialogDescription>
-              Déposez un fichier (PDF, image, DOCX, DOC, HEIC) pour l'ajouter au dossier
+              Déposez un fichier (PDF, image, DOCX, DOC, HEIC) pour l'ajouter au dossier.
+              Les doublons sont automatiquement détectés.
             </DialogDescription>
           </DialogHeader>
           <FileUploadZone onUpload={handleUpload} uploading={uploading} />
@@ -592,7 +993,15 @@ const DossierView = () => {
         />
       )}
 
-      {/* Delete Confirmation */}
+      {/* Preview Modal */}
+      {previewPiece && (
+        <FilePreviewModal
+          piece={previewPiece}
+          onClose={() => setPreviewPiece(null)}
+        />
+      )}
+
+      {/* Delete Single Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -607,6 +1016,28 @@ const DossierView = () => {
               className="bg-red-600 hover:bg-red-700 rounded-sm"
             >
               {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Supprimer'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Selected Confirmation */}
+      <AlertDialog open={deleteSelectedOpen} onOpenChange={setDeleteSelectedOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer {selectedPieces.length} pièce(s) ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cette action est irréversible. Les fichiers seront définitivement supprimés.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-sm">Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 rounded-sm"
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : `Supprimer ${selectedPieces.length} pièce(s)`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

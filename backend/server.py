@@ -1,9 +1,9 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 import os
 import logging
 from pathlib import Path
@@ -20,6 +20,8 @@ import io
 import zipfile
 import subprocess
 import tempfile
+import hashlib
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -51,10 +53,15 @@ EXPORTS_DIR.mkdir(exist_ok=True)
 # Config
 MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "50"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_CONCURRENT_ANALYSES = 2  # Per dossier
+ANALYSIS_RATE_LIMIT_SECONDS = 2  # Min seconds between analysis requests
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Analysis queue lock (simple in-memory for now)
+analysis_locks = {}
 
 # ===================== MODELS =====================
 
@@ -127,8 +134,14 @@ class PieceResponse(BaseModel):
     original_filename: str
     file_type: str
     file_size: int = 0
+    file_hash: Optional[str] = None
+    is_duplicate: bool = False
     status: str
-    analysis_status: str = "pending"  # pending, analyzing, complete, error
+    analysis_status: str = "pending"  # pending, queued, analyzing, complete, error
+    analysis_error: Optional[str] = None
+    analysis_queued_at: Optional[str] = None
+    analysis_started_at: Optional[str] = None
+    analysis_completed_at: Optional[str] = None
     ai_proposal: Optional[AIProposal] = None
     validated_data: Optional[PieceValidation] = None
     created_at: str
@@ -146,9 +159,9 @@ class ShareLinkResponse(BaseModel):
     created_at: str
 
 class AssistantRequest(BaseModel):
-    document_type: str  # expose_faits, chronologie_narrative, courrier_avocat, projet_requete
-    jurisdiction: Optional[str] = None  # jaf, penal, prudhommes, administratif, civil, commercial, autre
-    piece_ids: List[str] = []  # Empty = all validated pieces
+    document_type: str
+    jurisdiction: Optional[str] = None
+    piece_ids: List[str] = []
     date_start: Optional[str] = None
     date_end: Optional[str] = None
 
@@ -156,6 +169,17 @@ class AssistantResponse(BaseModel):
     content: str
     pieces_used: List[int]
     warnings: List[str] = []
+
+class DeleteManyRequest(BaseModel):
+    piece_ids: List[str]
+
+class DuplicateCheckResponse(BaseModel):
+    is_duplicate: bool
+    existing_piece_id: Optional[str] = None
+    existing_piece_numero: Optional[int] = None
+
+class QueueAnalysisRequest(BaseModel):
+    piece_ids: List[str] = []  # Empty = all pending pieces
 
 # ===================== AUTH HELPERS =====================
 
@@ -186,6 +210,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+def compute_file_hash(content: bytes) -> str:
+    """Compute SHA256 hash of file content"""
+    return hashlib.sha256(content).hexdigest()
 
 # ===================== AUTH ROUTES =====================
 
@@ -308,7 +336,7 @@ def convert_heic_to_jpg(filepath: Path) -> Path:
         img = Image.open(filepath)
         new_path = filepath.with_suffix('.jpg')
         img.convert('RGB').save(new_path, 'JPEG', quality=95)
-        filepath.unlink()  # Remove original
+        filepath.unlink()
         return new_path
     except Exception as e:
         logger.error(f"HEIC conversion error: {e}")
@@ -347,7 +375,7 @@ def extract_text_from_pdf(filepath: Path) -> str:
         from pypdf import PdfReader
         reader = PdfReader(filepath)
         text_parts = []
-        for page in reader.pages[:50]:  # Limit to 50 pages
+        for page in reader.pages[:50]:
             text_parts.append(page.extract_text() or "")
         return "\n".join(text_parts)
     except Exception as e:
@@ -356,19 +384,64 @@ def extract_text_from_pdf(filepath: Path) -> str:
 
 # ===================== PIECE ROUTES =====================
 
-@api_router.post("/dossiers/{dossier_id}/pieces", response_model=PieceResponse)
-async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+@api_router.post("/dossiers/{dossier_id}/check-duplicate")
+async def check_duplicate(
+    dossier_id: str, 
+    file: UploadFile = File(...), 
+    user: dict = Depends(get_current_user)
+):
+    """Check if a file is a duplicate before uploading"""
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
-    # Read file content
+    content = await file.read()
+    file_hash = compute_file_hash(content)
+    
+    existing = await db.pieces.find_one(
+        {"dossier_id": dossier_id, "file_hash": file_hash},
+        {"_id": 0}
+    )
+    
+    if existing:
+        return DuplicateCheckResponse(
+            is_duplicate=True,
+            existing_piece_id=existing["id"],
+            existing_piece_numero=existing["numero"]
+        )
+    
+    return DuplicateCheckResponse(is_duplicate=False)
+
+@api_router.post("/dossiers/{dossier_id}/pieces", response_model=PieceResponse)
+async def upload_piece(
+    dossier_id: str, 
+    file: UploadFile = File(...),
+    force_upload: bool = Query(False, description="Upload even if duplicate"),
+    user: dict = Depends(get_current_user)
+):
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
     content = await file.read()
     file_size = len(content)
     
-    # Check file size
     if file_size > MAX_FILE_SIZE_BYTES:
         raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {MAX_FILE_SIZE_MB} MB)")
+    
+    # Compute hash for duplicate detection
+    file_hash = compute_file_hash(content)
+    
+    # Check for duplicate
+    is_duplicate = False
+    existing = await db.pieces.find_one({"dossier_id": dossier_id, "file_hash": file_hash})
+    if existing:
+        is_duplicate = True
+        if not force_upload:
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Fichier identique déjà présent (Pièce {existing['numero']}). Utilisez force_upload=true pour importer quand même."
+            )
     
     # Get next piece number
     last_piece = await db.pieces.find_one({"dossier_id": dossier_id}, sort=[("numero", -1)])
@@ -405,8 +478,14 @@ async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict
         "original_filename": file.filename,
         "file_type": file_type,
         "file_size": file_size,
+        "file_hash": file_hash,
+        "is_duplicate": is_duplicate,
         "status": "a_verifier",
         "analysis_status": "pending",
+        "analysis_error": None,
+        "analysis_queued_at": None,
+        "analysis_started_at": None,
+        "analysis_completed_at": None,
         "ai_proposal": None,
         "validated_data": None,
         "extracted_text": None,
@@ -418,12 +497,23 @@ async def upload_piece(dossier_id: str, file: UploadFile = File(...), user: dict
     return PieceResponse(**{k: v for k, v in piece_doc.items() if k != "extracted_text"})
 
 @api_router.get("/dossiers/{dossier_id}/pieces", response_model=List[PieceResponse])
-async def list_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
+async def list_pieces(
+    dossier_id: str, 
+    filter_duplicates: bool = Query(False),
+    filter_errors: bool = Query(False),
+    user: dict = Depends(get_current_user)
+):
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
-    pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0, "extracted_text": 0}).sort("numero", 1).to_list(1000)
+    query = {"dossier_id": dossier_id}
+    if filter_duplicates:
+        query["is_duplicate"] = True
+    if filter_errors:
+        query["analysis_status"] = "error"
+    
+    pieces = await db.pieces.find(query, {"_id": 0, "extracted_text": 0}).sort("numero", 1).to_list(1000)
     return [PieceResponse(**p) for p in pieces]
 
 @api_router.get("/pieces/{piece_id}", response_model=PieceResponse)
@@ -440,6 +530,7 @@ async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.get("/pieces/{piece_id}/file")
 async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
+    """Download piece file with proper authentication"""
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
@@ -452,11 +543,225 @@ async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
-    return FileResponse(filepath, filename=piece["original_filename"])
+    return FileResponse(
+        filepath, 
+        filename=piece["original_filename"],
+        media_type="application/octet-stream"
+    )
+
+@api_router.get("/pieces/{piece_id}/preview")
+async def preview_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
+    """Get file content for inline preview (PDF/images)"""
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    if not piece:
+        raise HTTPException(status_code=404, detail="Piece not found")
+    
+    dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    filepath = UPLOAD_DIR / piece["filename"]
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Determine content type
+    ext = Path(piece["filename"]).suffix.lower()
+    content_types = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+    }
+    content_type = content_types.get(ext, "application/octet-stream")
+    
+    async with aiofiles.open(filepath, 'rb') as f:
+        content = await f.read()
+    
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{piece["original_filename"]}"'
+        }
+    )
+
+# ===================== ANALYSIS QUEUE =====================
+
+@api_router.post("/dossiers/{dossier_id}/queue-analysis")
+async def queue_analysis(
+    dossier_id: str, 
+    request: QueueAnalysisRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Queue pieces for analysis (instead of analyzing all at once)"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    # Build query
+    query = {"dossier_id": dossier_id}
+    if request.piece_ids:
+        query["id"] = {"$in": request.piece_ids}
+    else:
+        # Only queue pieces that haven't been analyzed or had errors
+        query["analysis_status"] = {"$in": ["pending", "error"]}
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.pieces.update_many(
+        query,
+        {"$set": {
+            "analysis_status": "queued",
+            "analysis_queued_at": now,
+            "analysis_error": None,
+            "updated_at": now
+        }}
+    )
+    
+    return {
+        "message": f"{result.modified_count} pièces ajoutées à la file d'attente",
+        "queued_count": result.modified_count
+    }
+
+@api_router.post("/dossiers/{dossier_id}/queue-failed")
+async def queue_failed_analyses(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Re-queue all failed analyses"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.pieces.update_many(
+        {"dossier_id": dossier_id, "analysis_status": "error"},
+        {"$set": {
+            "analysis_status": "queued",
+            "analysis_queued_at": now,
+            "analysis_error": None,
+            "updated_at": now
+        }}
+    )
+    
+    return {
+        "message": f"{result.modified_count} pièces en échec remises en file d'attente",
+        "queued_count": result.modified_count
+    }
+
+@api_router.post("/dossiers/{dossier_id}/process-queue")
+async def process_analysis_queue(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Process queued analyses with rate limiting"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    # Check rate limit (simple implementation)
+    lock_key = f"analysis_{dossier_id}"
+    now = datetime.now(timezone.utc)
+    
+    if lock_key in analysis_locks:
+        last_run = analysis_locks[lock_key]
+        if (now - last_run).total_seconds() < ANALYSIS_RATE_LIMIT_SECONDS:
+            return {"message": "Veuillez patienter quelques secondes avant de relancer", "processed": 0}
+    
+    analysis_locks[lock_key] = now
+    
+    # Count currently analyzing
+    analyzing_count = await db.pieces.count_documents({
+        "dossier_id": dossier_id,
+        "analysis_status": "analyzing"
+    })
+    
+    # Calculate how many we can process
+    slots_available = MAX_CONCURRENT_ANALYSES - analyzing_count
+    if slots_available <= 0:
+        return {"message": "Analyses en cours, veuillez patienter", "processed": 0}
+    
+    # Get queued pieces
+    queued_pieces = await db.pieces.find(
+        {"dossier_id": dossier_id, "analysis_status": "queued"},
+        {"_id": 0}
+    ).sort("analysis_queued_at", 1).limit(slots_available).to_list(slots_available)
+    
+    processed = 0
+    for piece in queued_pieces:
+        try:
+            # Mark as analyzing
+            await db.pieces.update_one(
+                {"id": piece["id"]},
+                {"$set": {
+                    "analysis_status": "analyzing",
+                    "analysis_started_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            # Perform analysis
+            filepath = UPLOAD_DIR / piece["filename"]
+            ai_proposal = await analyze_document_with_ai(
+                filepath, piece["file_type"], piece["original_filename"], piece["id"]
+            )
+            
+            # Update with results
+            await db.pieces.update_one(
+                {"id": piece["id"]},
+                {"$set": {
+                    "ai_proposal": ai_proposal,
+                    "analysis_status": "complete",
+                    "analysis_completed_at": datetime.now(timezone.utc).isoformat(),
+                    "analysis_error": None,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            processed += 1
+            
+        except Exception as e:
+            logger.error(f"Analysis failed for piece {piece['id']}: {e}")
+            await db.pieces.update_one(
+                {"id": piece["id"]},
+                {"$set": {
+                    "analysis_status": "error",
+                    "analysis_error": str(e)[:500],
+                    "analysis_completed_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+    
+    # Check if more in queue
+    remaining = await db.pieces.count_documents({
+        "dossier_id": dossier_id,
+        "analysis_status": "queued"
+    })
+    
+    return {
+        "message": f"{processed} analyse(s) terminée(s)",
+        "processed": processed,
+        "remaining_in_queue": remaining
+    }
+
+@api_router.get("/dossiers/{dossier_id}/queue-status")
+async def get_queue_status(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Get current analysis queue status"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    pending = await db.pieces.count_documents({"dossier_id": dossier_id, "analysis_status": "pending"})
+    queued = await db.pieces.count_documents({"dossier_id": dossier_id, "analysis_status": "queued"})
+    analyzing = await db.pieces.count_documents({"dossier_id": dossier_id, "analysis_status": "analyzing"})
+    complete = await db.pieces.count_documents({"dossier_id": dossier_id, "analysis_status": "complete"})
+    error = await db.pieces.count_documents({"dossier_id": dossier_id, "analysis_status": "error"})
+    
+    return {
+        "pending": pending,
+        "queued": queued,
+        "analyzing": analyzing,
+        "complete": complete,
+        "error": error,
+        "total": pending + queued + analyzing + complete + error
+    }
 
 @api_router.post("/pieces/{piece_id}/analyze", response_model=PieceResponse)
 async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
-    """Trigger AI analysis of a piece"""
+    """Analyze a single piece (with rate limiting)"""
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
@@ -464,44 +769,25 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
     dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Rate limit check
+    lock_key = f"piece_{piece_id}"
+    now = datetime.now(timezone.utc)
+    
+    if lock_key in analysis_locks:
+        last_run = analysis_locks[lock_key]
+        if (now - last_run).total_seconds() < ANALYSIS_RATE_LIMIT_SECONDS:
+            raise HTTPException(status_code=429, detail="Veuillez patienter avant de relancer l'analyse")
+    
+    analysis_locks[lock_key] = now
     
     # Set status to analyzing
-    await db.pieces.update_one({"id": piece_id}, {"$set": {"analysis_status": "analyzing"}})
-    
-    try:
-        filepath = UPLOAD_DIR / piece["filename"]
-        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
-        
-        await db.pieces.update_one(
-            {"id": piece_id},
-            {"$set": {
-                "ai_proposal": ai_proposal,
-                "analysis_status": "complete",
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }}
-        )
-    except Exception as e:
-        logger.error(f"Analysis error: {e}")
-        await db.pieces.update_one({"id": piece_id}, {"$set": {"analysis_status": "error"}})
-    
-    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
-    return PieceResponse(**piece)
-
-@api_router.post("/pieces/{piece_id}/reanalyze", response_model=PieceResponse)
-async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
-    """Re-analyze a piece (useful if OCR was bad)"""
-    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
-    if not piece:
-        raise HTTPException(status_code=404, detail="Piece not found")
-    
-    dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
-    if not dossier:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    # Clear previous analysis and re-analyze
     await db.pieces.update_one(
-        {"id": piece_id},
-        {"$set": {"ai_proposal": None, "analysis_status": "analyzing", "extracted_text": None}}
+        {"id": piece_id}, 
+        {"$set": {
+            "analysis_status": "analyzing",
+            "analysis_started_at": datetime.now(timezone.utc).isoformat()
+        }}
     )
     
     try:
@@ -513,12 +799,83 @@ async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user))
             {"$set": {
                 "ai_proposal": ai_proposal,
                 "analysis_status": "complete",
+                "analysis_completed_at": datetime.now(timezone.utc).isoformat(),
+                "analysis_error": None,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+    except Exception as e:
+        logger.error(f"Analysis error: {e}")
+        await db.pieces.update_one(
+            {"id": piece_id}, 
+            {"$set": {
+                "analysis_status": "error",
+                "analysis_error": str(e)[:500],
+                "analysis_completed_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+    
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
+    return PieceResponse(**piece)
+
+@api_router.post("/pieces/{piece_id}/reanalyze", response_model=PieceResponse)
+async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
+    """Re-analyze a piece (clear previous and retry)"""
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    if not piece:
+        raise HTTPException(status_code=404, detail="Piece not found")
+    
+    dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Rate limit check
+    lock_key = f"piece_{piece_id}"
+    now = datetime.now(timezone.utc)
+    
+    if lock_key in analysis_locks:
+        last_run = analysis_locks[lock_key]
+        if (now - last_run).total_seconds() < ANALYSIS_RATE_LIMIT_SECONDS:
+            raise HTTPException(status_code=429, detail="Veuillez patienter avant de relancer l'analyse")
+    
+    analysis_locks[lock_key] = now
+    
+    # Clear previous analysis
+    await db.pieces.update_one(
+        {"id": piece_id},
+        {"$set": {
+            "ai_proposal": None, 
+            "analysis_status": "analyzing", 
+            "extracted_text": None,
+            "analysis_error": None,
+            "analysis_started_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    try:
+        filepath = UPLOAD_DIR / piece["filename"]
+        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        
+        await db.pieces.update_one(
+            {"id": piece_id},
+            {"$set": {
+                "ai_proposal": ai_proposal,
+                "analysis_status": "complete",
+                "analysis_completed_at": datetime.now(timezone.utc).isoformat(),
+                "analysis_error": None,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }}
         )
     except Exception as e:
         logger.error(f"Re-analysis error: {e}")
-        await db.pieces.update_one({"id": piece_id}, {"$set": {"analysis_status": "error"}})
+        await db.pieces.update_one(
+            {"id": piece_id}, 
+            {"$set": {
+                "analysis_status": "error",
+                "analysis_error": str(e)[:500],
+                "analysis_completed_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
     
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
     return PieceResponse(**piece)
@@ -562,6 +919,55 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     await db.pieces.delete_one({"id": piece_id})
     return {"message": "Piece deleted"}
 
+@api_router.post("/dossiers/{dossier_id}/pieces/delete-many")
+async def delete_many_pieces(
+    dossier_id: str, 
+    request: DeleteManyRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Delete multiple pieces at once"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    # Get pieces that belong to this dossier
+    pieces = await db.pieces.find({
+        "id": {"$in": request.piece_ids},
+        "dossier_id": dossier_id
+    }).to_list(len(request.piece_ids))
+    
+    deleted_count = 0
+    for piece in pieces:
+        filepath = UPLOAD_DIR / piece["filename"]
+        if filepath.exists():
+            filepath.unlink()
+        await db.pieces.delete_one({"id": piece["id"]})
+        deleted_count += 1
+    
+    return {"message": f"{deleted_count} pièces supprimées", "deleted_count": deleted_count}
+
+@api_router.post("/dossiers/{dossier_id}/pieces/delete-errors")
+async def delete_error_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Delete all pieces with analysis errors"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    pieces = await db.pieces.find({
+        "dossier_id": dossier_id,
+        "analysis_status": "error"
+    }).to_list(1000)
+    
+    deleted_count = 0
+    for piece in pieces:
+        filepath = UPLOAD_DIR / piece["filename"]
+        if filepath.exists():
+            filepath.unlink()
+        await db.pieces.delete_one({"id": piece["id"]})
+        deleted_count += 1
+    
+    return {"message": f"{deleted_count} pièces en erreur supprimées", "deleted_count": deleted_count}
+
 @api_router.post("/dossiers/{dossier_id}/renumber")
 async def renumber_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
@@ -583,7 +989,7 @@ async def analyze_document_with_ai(filepath: Path, file_type: str, original_file
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
         logger.error("EMERGENT_LLM_KEY not set")
-        return generate_fallback_proposal(original_filename)
+        raise Exception("Configuration serveur incomplète (clé API manquante)")
     
     try:
         # Extract text for DOCX/DOC files first
@@ -666,25 +1072,12 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
         proposal = json.loads(response_text.strip())
         return proposal
         
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error: {e}")
+        raise Exception(f"Erreur de parsing de la réponse IA")
     except Exception as e:
         logger.error(f"AI analysis error: {e}")
-        return generate_fallback_proposal(original_filename)
-
-def generate_fallback_proposal(filename: str) -> dict:
-    return {
-        "type_piece": "autre",
-        "type_confidence": "faible",
-        "date_document": None,
-        "date_confidence": "faible",
-        "titre": Path(filename).stem.replace("_", " ").replace("-", " ").title(),
-        "titre_confidence": "faible",
-        "resume_qui": None,
-        "resume_quoi": None,
-        "resume_ou": None,
-        "resume_element_cle": None,
-        "mots_cles": [],
-        "extrait_justificatif": "Analyse automatique non disponible. Veuillez remplir manuellement."
-    }
+        raise
 
 # ===================== CHRONOLOGY & EXPORTS =====================
 
@@ -1288,7 +1681,7 @@ async def get_shared_chronology_pdf(token: str):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Dossier Juridique Intelligent API", "version": "2.0"}
+    return {"message": "Dossier Juridique Intelligent API", "version": "2.1"}
 
 @api_router.get("/health")
 async def health():

@@ -115,6 +115,11 @@ const DossierView = () => {
   // Filter state
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  
+  // Duplicate modal state
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
+  const [duplicatePendingFile, setDuplicatePendingFile] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {

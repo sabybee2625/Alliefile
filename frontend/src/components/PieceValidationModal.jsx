@@ -173,28 +173,12 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
               <Label className="font-medium">Date du document</Label>
               <ConfidenceBadge level={proposal.date_confidence} />
             </div>
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal rounded-sm"
-                  data-testid="date-picker"
-                >
-                  {formData.date_document
-                    ? formatDate(formData.date_document)
-                    : 'Sélectionner une date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={formData.date_document ? new Date(formData.date_document) : undefined}
-                  onSelect={handleDateSelect}
-                  locale={fr}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
+            <DateInput
+              value={formData.date_document}
+              onChange={(val) => handleChange('date_document', val)}
+              placeholder="JJ/MM/AAAA"
+              allowUnknown={true}
+            />
           </div>
 
           {/* Titre */}

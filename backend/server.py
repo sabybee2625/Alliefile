@@ -430,24 +430,41 @@ async def upload_piece(
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
+    # Read file content ONCE and store in memory
     content = await file.read()
     file_size = len(content)
+    
+    # Reject empty files
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="Le fichier est vide (0 bytes)")
     
     if file_size > MAX_FILE_SIZE_BYTES:
         raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {MAX_FILE_SIZE_MB} MB)")
     
-    # Compute hash for duplicate detection
+    # Compute hash for duplicate detection on raw bytes
     file_hash = compute_file_hash(content)
+    content_type = file.content_type or "application/octet-stream"
     
-    # Check for duplicate
+    # Check for duplicate using hash AND size
+    existing = await db.pieces.find_one({
+        "dossier_id": dossier_id, 
+        "file_hash": file_hash,
+        "file_size": file_size
+    })
+    
     is_duplicate = False
-    existing = await db.pieces.find_one({"dossier_id": dossier_id, "file_hash": file_hash})
     if existing:
         is_duplicate = True
         if not force_upload:
+            # Return detailed error for frontend to display
             raise HTTPException(
                 status_code=409, 
-                detail=f"Fichier identique déjà présent (Pièce {existing['numero']}). Utilisez force_upload=true pour importer quand même."
+                detail={
+                    "message": f"Fichier identique déjà présent (Pièce {existing['numero']})",
+                    "existing_piece_id": existing["id"],
+                    "existing_piece_numero": existing["numero"],
+                    "existing_filename": existing["original_filename"]
+                }
             )
     
     # Get next piece number
@@ -458,17 +475,25 @@ async def upload_piece(
     ext = Path(file.filename).suffix.lower()
     file_type_map = {
         ".pdf": "pdf", ".jpg": "image", ".jpeg": "image", ".png": "image",
-        ".docx": "docx", ".doc": "doc", ".heic": "heic", ".heif": "heic"
+        ".docx": "docx", ".doc": "doc", ".heic": "heic", ".heif": "heic",
+        ".txt": "text"
     }
     file_type = file_type_map.get(ext, "other")
     
-    # Save file
+    # Save file - use stored content bytes
     piece_id = str(uuid.uuid4())
     filename = f"{piece_id}{ext}"
     filepath = UPLOAD_DIR / filename
     
     async with aiofiles.open(filepath, 'wb') as f:
         await f.write(content)
+    
+    # Verify file was written correctly
+    actual_size = filepath.stat().st_size
+    if actual_size != file_size:
+        logger.error(f"File size mismatch: expected {file_size}, got {actual_size}")
+        filepath.unlink()  # Clean up
+        raise HTTPException(status_code=500, detail="Erreur lors de l'enregistrement du fichier")
     
     # Convert HEIC if needed
     if file_type == "heic":
@@ -485,6 +510,7 @@ async def upload_piece(
         "original_filename": file.filename,
         "file_type": file_type,
         "file_size": file_size,
+        "content_type": content_type,
         "file_hash": file_hash,
         "is_duplicate": is_duplicate,
         "status": "a_verifier",
@@ -501,7 +527,9 @@ async def upload_piece(
     }
     await db.pieces.insert_one(piece_doc)
     
-    return PieceResponse(**{k: v for k, v in piece_doc.items() if k != "extracted_text"})
+    logger.info(f"Uploaded piece {piece_id}: {file.filename}, size={file_size}, type={file_type}")
+    
+    return PieceResponse(**{k: v for k, v in piece_doc.items() if k not in ["extracted_text", "content_type"]})
 
 @api_router.get("/dossiers/{dossier_id}/pieces", response_model=List[PieceResponse])
 async def list_pieces(

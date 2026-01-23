@@ -53,16 +53,34 @@ export const dossiersApi = {
   exportDocx: (id) => api.get(`/dossiers/${id}/export/docx`, { responseType: 'blob' }),
   createShareLink: (id, data) => api.post(`/dossiers/${id}/share`, data),
   generateAssistant: (id, data) => api.post(`/dossiers/${id}/assistant`, data),
+  // Queue management
+  queueAnalysis: (id, pieceIds = []) => api.post(`/dossiers/${id}/queue-analysis`, { piece_ids: pieceIds }),
+  queueFailed: (id) => api.post(`/dossiers/${id}/queue-failed`),
+  processQueue: (id) => api.post(`/dossiers/${id}/process-queue`),
+  getQueueStatus: (id) => api.get(`/dossiers/${id}/queue-status`),
+  // Duplicate check
+  checkDuplicate: (id, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/dossiers/${id}/check-duplicate`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 // Pieces
 export const piecesApi = {
-  list: (dossierId) => api.get(`/dossiers/${dossierId}/pieces`),
+  list: (dossierId, filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.duplicates) params.append('filter_duplicates', 'true');
+    if (filters.errors) params.append('filter_errors', 'true');
+    return api.get(`/dossiers/${dossierId}/pieces?${params.toString()}`);
+  },
   get: (id) => api.get(`/pieces/${id}`),
-  upload: (dossierId, file) => {
+  upload: (dossierId, file, forceUpload = false) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post(`/dossiers/${dossierId}/pieces`, formData, {
+    return api.post(`/dossiers/${dossierId}/pieces?force_upload=${forceUpload}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
@@ -70,7 +88,27 @@ export const piecesApi = {
   reanalyze: (id) => api.post(`/pieces/${id}/reanalyze`),
   validate: (id, data) => api.post(`/pieces/${id}/validate`, data),
   delete: (id) => api.delete(`/pieces/${id}`),
+  deleteMany: (dossierId, pieceIds) => api.post(`/dossiers/${dossierId}/pieces/delete-many`, { piece_ids: pieceIds }),
+  deleteErrors: (dossierId) => api.post(`/dossiers/${dossierId}/pieces/delete-errors`),
+  // File access with auth
   getFileUrl: (id) => `${API_URL}/pieces/${id}/file`,
+  getPreviewUrl: (id) => `${API_URL}/pieces/${id}/preview`,
+  // Fetch file with auth header (for inline preview)
+  fetchFile: async (id) => {
+    const response = await api.get(`/pieces/${id}/preview`, { responseType: 'blob' });
+    return response.data;
+  },
+  downloadFile: async (id, filename) => {
+    const response = await api.get(`/pieces/${id}/file`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(response.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
 };
 
 // Shared (public)

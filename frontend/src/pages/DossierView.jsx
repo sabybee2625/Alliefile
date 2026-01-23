@@ -186,7 +186,6 @@ const DossierView = () => {
   const handleUpload = async (files, forceUpload = false) => {
     setUploading(true);
     let uploaded = 0;
-    let duplicates = 0;
     
     try {
       for (const file of files) {
@@ -195,8 +194,19 @@ const DossierView = () => {
           uploaded++;
         } catch (error) {
           if (error.response?.status === 409) {
-            duplicates++;
-            toast.error(`Doublon détecté: ${file.name}`);
+            // Show duplicate modal with details
+            const info = error.duplicateInfo || {
+              existingPieceNumero: '?',
+              existingFilename: file.name,
+              message: 'Fichier identique déjà présent'
+            };
+            setDuplicateInfo(info);
+            setDuplicatePendingFile(file);
+            setDuplicateModalOpen(true);
+            setUploading(false);
+            return; // Stop processing, wait for user decision
+          } else if (error.response?.status === 400) {
+            toast.error(`Fichier invalide: ${file.name} (${error.response?.data?.detail || 'erreur'})`);
           } else {
             throw error;
           }
@@ -205,9 +215,6 @@ const DossierView = () => {
       
       if (uploaded > 0) {
         toast.success(`${uploaded} fichier${uploaded > 1 ? 's' : ''} uploadé${uploaded > 1 ? 's' : ''}`);
-      }
-      if (duplicates > 0) {
-        toast.warning(`${duplicates} doublon${duplicates > 1 ? 's' : ''} ignoré${duplicates > 1 ? 's' : ''}`);
       }
       
       setUploadOpen(false);
@@ -220,6 +227,32 @@ const DossierView = () => {
       }
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDuplicateCancel = () => {
+    setDuplicateModalOpen(false);
+    setDuplicateInfo(null);
+    setDuplicatePendingFile(null);
+    setUploadOpen(false);
+  };
+
+  const handleDuplicateForceUpload = async () => {
+    if (!duplicatePendingFile) return;
+    setDuplicateModalOpen(false);
+    setUploading(true);
+    
+    try {
+      await piecesApi.upload(id, duplicatePendingFile, true);
+      toast.success('Fichier importé (marqué comme doublon)');
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de l\'import');
+    } finally {
+      setUploading(false);
+      setDuplicateInfo(null);
+      setDuplicatePendingFile(null);
+      setUploadOpen(false);
     }
   };
 

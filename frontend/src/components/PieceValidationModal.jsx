@@ -77,6 +77,7 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
   });
   
   const [saving, setSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));

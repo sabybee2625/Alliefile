@@ -1,0 +1,234 @@
+<analysis>**original_problem_statement:**
+L'utilisateur souhaite créer une application web de dossier juridique intelligent (MVP). L'objectif principal est d'automatiser l'organisation et la compréhension des pièces juridiques pour minimiser la saisie manuelle.
+
+**PRODUCT REQUIREMENTS (Phases et demandes successives):**
+
+**Phase 1: MVP de base (Message #1)**
+*   **Workflow Principal:** Télécharger un document (PDF, JPG, PNG, DOCX, etc.) → L'IA analyse le texte (OCR si besoin) et propose des métadonnées → L'utilisateur valide/modifie les propositions.
+*   **Propositions de l'IA:** Type de pièce, date du document, titre, résumé factuel (Qui, Quoi, Où, Élément clé), mots-clés. Chaque proposition doit avoir un indice de confiance et un extrait justificatif.
+*   **Organisation:** Numérotation automatique et stable des pièces. Une vue chronologique fondamentale basée sur la date des documents.
+*   **Exports:** Génération d'une chronologie des faits (PDF/DOCX), sommaire des pièces (PDF/CSV), et export ZIP des fichiers.
+*   **Sécurité:** Authentification JWT et partage de dossier en lecture seule via un lien sécurisé.
+*   **Stack:** React, FastAPI, MongoDB.
+
+**Phase 2: Améliorations et Exports Pro (Message #59, #65)**
+*   **Exports Juridiques:**
+    *   Export PDF A4 de la chronologie (en-tête pro, mise en page Swiss).
+    *   Export DOCX Chronologie narrative (texte rédigé avec renvois aux pièces).
+*   **Assistant de Rédaction:** Génère des brouillons (exposé des faits, courrier, etc.) uniquement à partir des pièces validées, en citant systématiquement les sources.
+*   **Gestion des Fichiers:** Support étendu (DOC, HEIC), gestion robuste des gros fichiers (limite configurable, analyse par chunks), et affichage de l'état de l'analyse.
+*   **Fiabilité:** Affichage systématique de l'indice de confiance et de l'extrait. Bouton Re-analyser une pièce.
+*   **Partage Avocat Amélioré:** Accès à la chronologie et téléchargement des exports depuis la page de partage.
+
+**Phase 3: Dé-spécialisation de l'Assistant (Message #91)**
+*   **Problème:** L'assistant proposait Projet requête JAF par défaut.
+*   **Correction:** Rendre l'assistant agnostique au type de contentieux en remplaçant l'option par défaut par une option générique et en ajoutant un sélecteur de juridiction (Pénal, JAF, Prud'hommes, etc.).
+
+**Phase 4: Correction de Bugs Critiques et Fiabilisation (Message #120)**
+*   **Bug 1:** Voir le fichier renvoie Not authenticated. Nécessite l'envoi du token JWT et une prévisualisation intégrée.
+*   **Bug 2:** Les analyses en masse échouent. Nécessite une file d'attente (job queue) et une limitation des analyses concurrentes.
+*   **Bug 3:** Impossibilité de supprimer des pièces en lot. Nécessite des checkboxes et une action de suppression multiple.
+*   **Bug 4:** La saisie des dates est fastidieuse. Nécessite une saisie clavier et un sélecteur d'année/mois.
+*   **Bug 5:** Pas de détection de doublons à l'upload. Nécessite un calcul de hash et une alerte à l'utilisateur.
+
+**User's preferred language**: Français
+
+**what currently exists?**
+Une application full-stack (React/FastAPI/MongoDB) fonctionnelle qui met en œuvre une grande partie des fonctionnalités demandées. Elle inclut l'authentification JWT, la création de dossiers, l'upload de pièces, un système d'analyse (fictif pour l'instant) via une file d'attente (job queue), la validation des pièces, une vue chronologique et un assistant de rédaction agnostique. Le backend et le frontend viennent d'être massivement réécrits pour corriger une série de bugs critiques (authentification sur les fichiers, uploads en masse, suppression en lot, détection de doublons), mais ces nouvelles implémentations n'ont pas encore été testées.
+
+**Last working item**:
+- **Last item agent was working:** L'agent était en train d'implémenter les correctifs demandés dans le message #120. La dernière action concrète a été la création du composant frontend  (message #130), destiné à résoudre le bug de prévisualisation des fichiers. Ce composant est la dernière brique de la refonte majeure entreprise pour fiabiliser l'application.
+- **Status:** IN PROGRESS
+- **Agent Testing Done:** N
+- **Which testing method agent to use?** both.
+  - **Backend:** Utiliser  avec un token JWT pour tester directement l'endpoint .
+  - **Frontend:** Utiliser  pour vérifier l'affichage de la modale de prévisualisation et sa bonne intégration dans .
+  - **Global:** Utiliser  pour une validation de bout en bout de toutes les corrections de la Phase 4 une fois les tests unitaires réussis.
+- **User Testing Done:** N
+
+**All Pending/In progress Issue list**:
+La liste des problèmes est basée sur la demande de correction critique de l'utilisateur (message #120). L'agent a écrit le code pour la plupart des points, mais rien n'a été testé.
+
+-   **Issue 1:** Bug Voir le fichier → Not authenticated (P0)
+-   **Issue 2:** Upload massif → analyses perdues (P1)
+-   **Issue 3:** Suppression en lot non disponible (P1)
+-   **Issue 4:** Saisie des dates contraignante (P2)
+-   **Issue 5:** Détection de doublons manquante (P2)
+
+**Issues Detail:**
+- **Issue 1:** Bug Voir le fichier → Not authenticated
+    - **Attempted fixes:**
+        - Backend (): Un nouvel endpoint sécurisé  a été créé, il requiert un token JWT. La logique de streaming de fichier depuis GridFS a été mise en place.
+        - Frontend (, , ): La fonction d'API  a été mise à jour pour utiliser la méthode GET et passer le token. Le composant  a été modifié pour appeler cette fonction et ouvrir une nouvelle modale  pour la prévisualisation.
+    - **Next debug checklist:**
+        1.  Intégrer et importer  dans .
+        2.  Vérifier que le clic sur Voir le fichier déclenche l'appel à  et ouvre la modale.
+        3.  Inspecter la requête réseau pour confirmer la présence du header .
+        4.  Tester la prévisualisation pour différents types de fichiers (PDF, image, et le message pour DOCX).
+    - **Status:** IN PROGRESS
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both
+
+- **Issue 2:** Upload massif → analyses perdues
+    - **Attempted fixes:**
+        - Backend (): Un système de file d'attente (job queue) a été implémenté avec une collection MongoDB . Un worker (simulé dans une route pour l'instant) traite les jobs. La concurrence est limitée à 2 analyses simultanées. De nouveaux statuts de pièce (, , ) ont été ajoutés.
+        - Frontend (): Des boutons Analyser tout et Relancer les échecs ont été ajoutés. L'UI a été mise à jour pour afficher les nouveaux statuts des pièces.
+    - **Next debug checklist:**
+        1.  Uploader plusieurs fichiers et cliquer sur Analyser tout.
+        2.  Vérifier dans la base de données () que les tâches sont bien créées avec le statut .
+        3.  Vérifier que le statut des pièces dans l'UI passe à , puis , et enfin  ou .
+        4.  Simuler un échec d'analyse et tester le bouton Relancer les échecs.
+    - **Status:** IN PROGRESS
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both
+
+- **Issue 3:** Suppression en lot non disponible
+    - **Attempted fixes:**
+        - Backend (): Un endpoint  a été ajouté pour supprimer une liste de pièces par leurs IDs, avec vérification de propriété.
+        - Frontend (): Des cases à cocher ont été ajoutées à la liste des pièces. Des boutons d'action (Supprimer la sélection, etc.) et une modale de confirmation ont été implémentés.
+    - **Next debug checklist:**
+        1.  Tester la sélection/désélection de plusieurs pièces.
+        2.  Cliquer sur Supprimer la sélection et vérifier que la modale de confirmation apparaît.
+        3.  Valider la suppression et s'assurer que les pièces disparaissent de l'UI et de la base de données.
+    - **Status:** IN PROGRESS
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both
+
+- **Issue 4:** Saisie des dates contraignante
+    - **Attempted fixes:** Aucun. L'agent a été interrompu avant de pouvoir traiter ce point.
+    - **Next debug checklist:**
+        1.  Modifier le composant de validation de pièce ().
+        2.  Remplacer ou améliorer le composant de calendrier () pour permettre la saisie directe au clavier (format ) et ajouter des sélecteurs d'année/mois.
+        3.  Ajouter une case à cocher ou un bouton pour Date inconnue, qui mettrait la date à .
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Frontend
+
+- **Issue 5:** Détection de doublons manquante
+    - **Attempted fixes:**
+        - Backend (): L'endpoint d'upload calcule désormais un hash SHA256 du fichier et le stocke. L'endpoint de finalisation de l'upload vérifie si ce hash existe déjà dans le dossier.
+        - Frontend (, ): Le flux d'upload a été modifié. Si le backend détecte un doublon, l'UI affiche une modale d'alerte avec des options (Annuler, Importer quand même).
+    - **Next debug checklist:**
+        1.  Uploader un fichier une première fois.
+        2.  Tenter d'uploader le même fichier à nouveau dans le même dossier.
+        3.  Vérifier que l'alerte de doublon s'affiche.
+        4.  Tester les différentes options proposées à l'utilisateur.
+    - **Status:** IN PROGRESS
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both
+
+**In progress Task List**:
+- **Task 1:** Finaliser et tester la fiabilisation de l'application (P0)
+    - **Where to resume:** Le composant  vient d'être créé. Il faut l'intégrer dans . Ensuite, il faut commencer l'implémentation de l'amélioration de la saisie de date (Issue 4). Enfin, il faudra lancer une campagne de tests complète (manuelle puis via l'agent de test) pour valider tous les correctifs (Issues 1, 2, 3, 5) et la nouvelle fonctionnalité (Issue 4).
+    - **What will be achieved with this?** Une application stable, fiable et plus ergonomique, répondant aux retours critiques de l'utilisateur et prête pour une utilisation plus intensive.
+    - **Status:** IN PROGRESS
+    - **Should Test frontend/backend/both after fix?** Both
+    - **Blocked on something:** Non.
+
+**Upcoming and Future Tasks**
+*   **Upcoming Tasks:**
+    *   (P2) Implémenter l'amélioration de la saisie de date (Issue 4 ci-dessus).
+*   **Future Tasks:**
+    *   (P2) Recherche et filtrage avancés dans les pièces (suggéré par l'agent).
+    *   (P3) Gestion des rôles et permissions utilisateurs (suggéré par l'agent).
+    *   (P3) Export en PDF du résultat de l'assistant de rédaction (suggéré par l'agent).
+    *   (P3) Améliorer la gestion des très gros fichiers avec une analyse par chunks (demandé par l'utilisateur, backend partiellement prêt mais non activé).
+    *   (P3) Support du format HEIC avec conversion côté serveur.
+
+**Completed work in this session**
+- **MVP Initial:** Création de la structure complète de l'application avec authentification JWT, gestion de dossiers, upload de pièces et une vue chronologique.
+- **Améliorations V2:** Ajout d'exports PDF et DOCX professionnels, création d'un assistant de rédaction, et amélioration de la page de partage pour les avocats.
+- **Correctif Assistant:** L'assistant de rédaction a été rendu agnostique au type de contentieux (suppression de la référence JAF codée en dur).
+- **Début de la fiabilisation:** Le backend et le frontend ont été massivement réécrits pour implémenter une file d'attente d'analyse, la suppression en lot, la détection de doublons et un endpoint de téléchargement sécurisé.
+
+**Earlier issues found/mentioned but not fixed**
+- **Issue 1:** Saisie des dates contraignante.
+    - **Debug checklist:** Modifier  pour inclure un champ de saisie texte pour la date (JJ/MM/AAAA) et améliorer le calendrier avec des sélecteurs de mois/année. Ajouter une option Date inconnue.
+    - **Why to solve this issue and what will be achieved with this?** Améliorer l'ergonomie pour les utilisateurs qui doivent saisir des dates anciennes, ce qui est très fréquent dans les dossiers juridiques.
+    - **Should Test frontend/backend/both after fix:** Frontend
+    - **Is recurring issue?** N
+
+**Known issue recurrence from previous fork**
+- **Issue recurrence in previous fork:** None
+- **Recurrence count:** 0
+- **Status:** NA
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+- **Backend:** FastAPI, MongoDB (avec  pour l'async),  pour la validation de données, JWT pour l'authentification (, ),  et  for les exports.
+- **Frontend:** React, React Router, Tailwind CSS, Shadcn/UI (implicitement, via la structure des composants),  pour les appels API.
+- **Architecture:** API RESTful, Single Page Application (SPA).
+- **Concepts Clés:** Job Queue (implémentée manuellement avec une collection MongoDB), hachage de fichiers (SHA256) pour la détection de doublons, streaming de fichiers depuis GridFS.
+
+**key DB schema**
+- **users:** 
+- **dossiers:** 
+- **pieces:** 
+- **analysis_jobs:** 
+
+**changes in tech stack**
+- Ajout des dépendances backend :  et  pour la génération de documents.
+
+**All files of reference**
+- : Fichier principal du backend, entièrement réécrit pour intégrer la file d'attente, la suppression en lot, la détection de doublons et le téléchargement de fichiers sécurisé.
+- : Composant principal de l'interface utilisateur, entièrement réécrit pour gérer les cases à cocher, les nouveaux boutons d'action, l'affichage des statuts et les alertes de doublons.
+- : Couche de communication avec le backend, mise à jour avec les nouveaux endpoints.
+- : Nouveau composant créé pour prévisualiser les fichiers de manière sécurisée dans une modale. Il n'est pas encore intégré.
+- : Document de suivi du projet, mis à jour après la V2.
+
+**Areas that need refactoring**:
+- Le composant  doit être modifié pour améliorer l'ergonomie de la saisie de date (Issue 4).
+
+**key api endpoints**
+- , 
+-  (CRUD)
+- ,  (Nouveau flux avec détection de doublons)
+-  (Nouveau, pour la file d'attente)
+-  (Nouveau, sécurisé)
+-  (Nouveau)
+- 
+- 
+
+**Critical Info for New Agent**
+- L'application est dans un état de **refactoring partiel**. Une grande quantité de code a été écrite pour corriger des bugs critiques, mais **rien de tout cela n'a été testé**.
+- La priorité absolue est de **tester méthodiquement chaque correctif un par un** (téléchargement de fichier, file d'attente, suppression en lot, détection de doublons) avant de passer à autre chose.
+- La demande d'amélioration de la **saisie de date (Issue 4) n'a pas du tout été traitée** et doit être implémentée.
+- Le nouveau composant  existe mais n'est pas encore importé ni utilisé dans . C'est la première étape de la reprise.
+
+**documents and test reports created in this job**
+- 
+- 
+- 
+
+**Last 10 User Messages and any pending HUMAN messages**
+1.  **#120:** Requête critique de correction de 5 bugs bloquants (téléchargement non authentifié, échec des analyses en masse, pas de suppression en lot, saisie de date pénible, pas de détection de doublons). **STATUS: IN PROGRESS**.
+2.  **#119:** (Agent) Confirmation que le correctif de l'assistant (agnostique) est bon.
+3.  **#118:** (Agent) Confirmation que le code de l' est correct.
+4.  **#116:** (Agent) Crée un dossier de test.
+5.  **#114:** (Agent) Note que l'assistant ne se lance pas sans pièces validées.
+6.  **#91:** Requête pour corriger l'assistant de rédaction qui était trop spécialisé JAF. **STATUS: COMPLETED**.
+7.  **#90:** (Agent) Termine la V2 et suggère des améliorations futures.
+8.  **#66:** (Agent) Annonce l'implémentation des améliorations V2.
+9.  **#65:** Précisions sur la V2, avec une forte emphase sur le caractère juridiquement exploitable des exports. **STATUS: COMPLETED**.
+10. **#59:** Requête pour implémenter la V2 de l'application (exports pro, assistant, gestion des gros fichiers, etc.). **STATUS: COMPLETED**.
+
+**Project Health Check:**
+- **Broken:** Le téléchargement/prévisualisation de fichiers est probablement cassé car il dépend du  qui n'est pas encore intégré. Les nouvelles fonctionnalités (analyse en masse, suppression, etc.) sont non testées et potentiellement boguées.
+- **Mocked:** L'analyse par l'IA elle-même est simulée dans le backend ; le système se concentre sur le workflow (file d'attente, statuts, etc.) plutôt que sur l'appel réel à un LLM pour l'analyse de contenu.
+
+**3rd Party Integrations**
+- **OpenAI GPT-5.2 (via ):** Utilisé pour l'analyse de documents et l'assistant de rédaction. Utilise la clé **Emergent LLM Key**.
+
+**Testing status**
+- **Testing agent used after significant changes:** NO. La dernière refonte majeure n'a pas été suivie d'un appel à l'agent de test.
+- **Troubleshoot agent used after agent stuck in loop:** NO
+- **Test files created:** None
+- **Known regressions:** Inconnues, mais probables étant donné l'ampleur des changements non testés.
+
+**Credentials to test flow:**
+L'authentification se fait via un enregistrement email/mot de passe. Le testing agent peut créer ses propres utilisateurs.
+
+**What agent forgot to execute**
+- **Saisie des dates (Issue 4):** La tâche de rendre la saisie de date plus facile (saisie clavier, sélecteur année/mois) de la demande #120 a été complètement ignorée lors de la dernière session de travail.</analysis>

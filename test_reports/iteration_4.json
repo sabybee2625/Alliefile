@@ -1,0 +1,70 @@
+{
+  "summary": "Completed comprehensive testing of 3 critical bug fixes: A) Preview button in validation modal, B) Duplicate detection with 409 response, C) DOCX upload preserving file size. All 8 backend tests passed. Frontend UI tests verified all features working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": {
+    "backend": [
+      "Bug C: DOCX upload preserves file size (36713 bytes uploaded correctly)",
+      "Bug C: Downloaded file SHA256 hash matches original file",
+      "Bug C: Empty file (0 bytes) rejected with HTTP 400",
+      "Bug B: Duplicate upload returns 409 with existing_piece_id, existing_piece_numero, existing_filename",
+      "Bug B: force_upload=true allows duplicate import with is_duplicate=true",
+      "Bug A: Preview endpoint returns content for DOCX files",
+      "Bug A: File download endpoint works correctly"
+    ],
+    "frontend": [
+      "Bug A: 'Voir' button present in PieceValidationModal",
+      "Bug A: FilePreviewModal opens when clicking 'Voir' in validation modal",
+      "Bug A: 'Prévisualisation non disponible' message shown for DOCX files",
+      "Bug A: 'Télécharger le fichier' button present in FilePreviewModal",
+      "Bug B: Upload dialog shows 'Les doublons sont automatiquement détectés' message",
+      "Bug B: 'Doublon' badge displayed on duplicate pieces",
+      "Bug C: File sizes displayed in piece list (Mo indicator)"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bug_fixes.py",
+    "/app/test_reports/pytest/pytest_bug_fixes.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_bug_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "100% (All 3 bug fixes verified)"
+  },
+  "test_credentials": {
+    "email": "test_phase4@test.com",
+    "password": "Test123!"
+  },
+  "seed_data_creation": "Created test DOCX file (36713 bytes) for upload testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 3 critical bugs have been fixed and verified: A) Preview button in validation modal opens FilePreviewModal with 'preview not available' message for DOCX + download button, B) Duplicate detection returns 409 with full details (existing_piece_id, existing_piece_numero, existing_filename), force_upload=true works, C) DOCX upload preserves file size (not 0 bytes), empty files rejected with 400. AI analysis is MOCKED due to budget exhaustion on EMERGENT_LLM_KEY.",
+  "bugs_verified": {
+    "bug_a_preview_in_validation": {
+      "status": "FIXED",
+      "details": "PieceValidationModal has 'Voir' button that opens FilePreviewModal. For DOCX files, shows 'Prévisualisation non disponible' message with 'Télécharger' button."
+    },
+    "bug_b_duplicate_detection": {
+      "status": "FIXED",
+      "details": "POST /api/dossiers/{id}/pieces returns 409 for duplicates with {existing_piece_id, existing_piece_numero, existing_filename}. Frontend shows 'Doublon détecté' modal with 'Annuler' and 'Importer quand même' options. force_upload=true creates piece with is_duplicate=true."
+    },
+    "bug_c_docx_upload": {
+      "status": "FIXED",
+      "details": "DOCX files preserve their size after upload (tested with 36713 byte file). Downloaded file has identical SHA256 hash. Empty files (0 bytes) are rejected with HTTP 400."
+    }
+  },
+  "mocked_apis": {
+    "ai_analysis": "MOCKED - Gemini AI analysis not working due to budget exhaustion on EMERGENT_LLM_KEY. One piece has mock ai_proposal data for testing validation modal."
+  }
+}

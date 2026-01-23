@@ -1733,6 +1733,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_db_indexes():
+    """Create indexes for duplicate detection and performance"""
+    try:
+        # Unique index for duplicate detection (dossier_id + file_hash + file_size)
+        await db.pieces.create_index(
+            [("dossier_id", 1), ("file_hash", 1), ("file_size", 1)],
+            unique=False,  # Not unique because force_upload allows duplicates
+            name="idx_duplicate_detection"
+        )
+        # Index for dossier pieces listing
+        await db.pieces.create_index([("dossier_id", 1), ("numero", 1)], name="idx_dossier_pieces")
+        # Index for queue processing
+        await db.pieces.create_index([("dossier_id", 1), ("analysis_status", 1)], name="idx_analysis_queue")
+        logger.info("MongoDB indexes created successfully")
+    except Exception as e:
+        logger.warning(f"Index creation warning (may already exist): {e}")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

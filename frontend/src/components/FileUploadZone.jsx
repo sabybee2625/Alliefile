@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Button } from './ui/button';
-import { Loader2, Upload, FileText, Image, File, AlertCircle } from 'lucide-react';
+import { Loader2, Upload, FileText, Image, File, AlertCircle, Camera } from 'lucide-react';
+import { CameraCapture } from './CameraCapture';
 
 const ACCEPTED_TYPES = {
   'application/pdf': 'pdf',
@@ -17,10 +18,30 @@ const ACCEPTED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.docx', '.doc', '
 
 const MAX_FILE_SIZE_MB = 50;
 
+// Check if camera is available
+const checkCameraAvailable = async () => {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return false;
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.some(device => device.kind === 'videoinput');
+  } catch {
+    return false;
+  }
+};
+
 export const FileUploadZone = ({ onUpload, uploading }) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [errors, setErrors] = useState([]);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraAvailable, setCameraAvailable] = useState(true);
+
+  // Check camera on mount
+  React.useEffect(() => {
+    checkCameraAvailable().then(setCameraAvailable);
+  }, []);
 
   const handleDrag = useCallback((e) => {
     e.preventDefault();

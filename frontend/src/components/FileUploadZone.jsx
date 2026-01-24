@@ -107,12 +107,23 @@ export const FileUploadZone = ({ onUpload, uploading }) => {
     }
   };
 
+  // Handle photo capture from camera
+  const handleCameraCapture = (file) => {
+    setSelectedFiles(prev => [...prev, file]);
+    setCameraOpen(false);
+  };
+
   const getFileIcon = (file) => {
     const ext = file.name.split('.').pop().toLowerCase();
     if (ext === 'pdf') return <FileText className="w-4 h-4 text-red-500" />;
     if (['jpg', 'jpeg', 'png', 'heic', 'heif'].includes(ext)) return <Image className="w-4 h-4 text-blue-500" />;
     if (['doc', 'docx'].includes(ext)) return <FileText className="w-4 h-4 text-sky-600" />;
     return <File className="w-4 h-4 text-slate-500" />;
+  };
+
+  const getFileSource = (file) => {
+    if (file.isFromCamera) return '📷 Photo';
+    return null;
   };
 
   const formatSize = (bytes) => {

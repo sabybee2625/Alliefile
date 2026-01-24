@@ -514,6 +514,7 @@ async def upload_piece(
         "content_type": content_type,
         "file_hash": file_hash,
         "is_duplicate": is_duplicate,
+        "source": source if source else "upload",  # 'camera' or 'upload'
         "status": "a_verifier",
         "analysis_status": "pending",
         "analysis_error": None,

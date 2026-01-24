@@ -80,8 +80,14 @@ export const piecesApi = {
   upload: async (dossierId, file, forceUpload = false) => {
     const formData = new FormData();
     formData.append('file', file);
+    
+    // Build query params
+    const params = new URLSearchParams();
+    if (forceUpload) params.append('force_upload', 'true');
+    if (file.isFromCamera) params.append('source', 'camera');
+    
     try {
-      return await api.post(`/dossiers/${dossierId}/pieces?force_upload=${forceUpload}`, formData, {
+      return await api.post(`/dossiers/${dossierId}/pieces?${params.toString()}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
     } catch (error) {

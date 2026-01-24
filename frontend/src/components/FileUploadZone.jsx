@@ -134,6 +134,38 @@ export const FileUploadZone = ({ onUpload, uploading }) => {
 
   return (
     <div className="space-y-4">
+      {/* Camera + Upload buttons row */}
+      <div className="flex gap-2">
+        {/* Take Photo Button */}
+        <Button
+          variant="outline"
+          onClick={() => setCameraOpen(true)}
+          disabled={!cameraAvailable || uploading}
+          className="flex-1 h-auto py-4 rounded-sm border-2 border-dashed hover:border-slate-400 hover:bg-slate-50"
+          data-testid="camera-btn"
+        >
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+              <Camera className="w-5 h-5 text-blue-600" />
+            </div>
+            <span className="text-sm font-medium">
+              {cameraAvailable ? 'Prendre une photo' : 'Caméra non disponible'}
+            </span>
+          </div>
+        </Button>
+
+        {/* Mobile: Camera input fallback (for devices without mediaDevices API) */}
+        <input
+          id="camera-input"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleChange}
+          className="hidden"
+        />
+      </div>
+
+      {/* Drag & Drop Zone */}
       <div
         className={`upload-zone p-8 text-center cursor-pointer ${
           dragActive ? 'drag-active' : ''
@@ -169,6 +201,11 @@ export const FileUploadZone = ({ onUpload, uploading }) => {
         </div>
       </div>
 
+      {/* Info message */}
+      <p className="text-xs text-center text-slate-400">
+        Les doublons sont automatiquement détectés
+      </p>
+
       {/* Errors */}
       {errors.length > 0 && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-sm space-y-1">
@@ -194,6 +231,11 @@ export const FileUploadZone = ({ onUpload, uploading }) => {
               >
                 {getFileIcon(file)}
                 <span className="truncate flex-1">{file.name}</span>
+                {getFileSource(file) && (
+                  <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
+                    {getFileSource(file)}
+                  </span>
+                )}
                 <span className="text-xs text-slate-400">{formatSize(file.size)}</span>
                 <button
                   type="button"
@@ -225,6 +267,13 @@ export const FileUploadZone = ({ onUpload, uploading }) => {
           </Button>
         </div>
       )}
+
+      {/* Camera Capture Modal */}
+      <CameraCapture
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={handleCameraCapture}
+      />
     </div>
   );
 };

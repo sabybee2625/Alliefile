@@ -136,6 +136,7 @@ class PieceResponse(BaseModel):
     file_size: int = 0
     file_hash: Optional[str] = None
     is_duplicate: bool = False
+    source: str = "upload"  # 'upload' or 'camera'
     status: str
     analysis_status: str = "pending"  # pending, queued, analyzing, complete, error
     analysis_error: Optional[str] = None

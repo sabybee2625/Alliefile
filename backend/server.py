@@ -424,6 +424,7 @@ async def upload_piece(
     dossier_id: str, 
     file: UploadFile = File(...),
     force_upload: bool = Query(False, description="Upload even if duplicate"),
+    source: str = Query(None, description="Source of file: 'camera' for photos taken with camera"),
     user: dict = Depends(get_current_user)
 ):
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})

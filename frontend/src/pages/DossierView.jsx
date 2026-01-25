@@ -635,9 +635,13 @@ const DossierView = () => {
           </Card>
         )}
 
-        {/* Stats */}
+        {/* Stats - Clickable cards for quick filtering */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="border-slate-200">
+          <Card 
+            className={`border-slate-200 cursor-pointer transition-all hover:shadow-md hover:border-slate-300 ${statusFilter === null && !hasActiveFilter ? 'ring-2 ring-slate-400' : ''}`}
+            onClick={() => handleStatCardClick(null)}
+            data-testid="stat-total"
+          >
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-slate-100 rounded-sm flex items-center justify-center">
@@ -650,7 +654,11 @@ const DossierView = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200">
+          <Card 
+            className={`border-slate-200 cursor-pointer transition-all hover:shadow-md hover:border-amber-300 ${statusFilter === 'a_verifier' ? 'ring-2 ring-amber-400 border-amber-300' : ''}`}
+            onClick={() => handleStatCardClick('a_verifier')}
+            data-testid="stat-to-verify"
+          >
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-amber-100 rounded-sm flex items-center justify-center">
@@ -663,7 +671,11 @@ const DossierView = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200">
+          <Card 
+            className={`border-slate-200 cursor-pointer transition-all hover:shadow-md hover:border-emerald-300 ${statusFilter === 'pret' ? 'ring-2 ring-emerald-400 border-emerald-300' : ''}`}
+            onClick={() => handleStatCardClick('pret')}
+            data-testid="stat-ready"
+          >
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-emerald-100 rounded-sm flex items-center justify-center">
@@ -676,7 +688,11 @@ const DossierView = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200">
+          <Card 
+            className={`border-slate-200 cursor-pointer transition-all hover:shadow-md hover:border-red-300 ${statusFilter === 'error' ? 'ring-2 ring-red-400 border-red-300' : ''}`}
+            onClick={() => handleStatCardClick('error')}
+            data-testid="stat-errors"
+          >
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-red-100 rounded-sm flex items-center justify-center">

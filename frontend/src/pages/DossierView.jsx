@@ -188,6 +188,55 @@ const DossierView = () => {
     };
   }, [queueStatus, fetchQueueStatus, fetchData]);
 
+  // Handle stat card click - filter and scroll to pieces
+  const handleStatCardClick = (filter) => {
+    setStatusFilter(filter);
+    // Switch to pieces tab if not already
+    if (tabsRef.current) {
+      const piecesTab = tabsRef.current.querySelector('[value="pieces"]');
+      if (piecesTab) piecesTab.click();
+    }
+    // Scroll to pieces list after a brief delay
+    setTimeout(() => {
+      if (piecesListRef.current) {
+        piecesListRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
+  // Reset filter
+  const resetFilter = () => {
+    setStatusFilter(null);
+    setShowDuplicates(false);
+    setShowErrors(false);
+  };
+
+  // Filter pieces based on current filter
+  const filteredPieces = pieces.filter(piece => {
+    // Status filter
+    if (statusFilter === 'a_verifier' && piece.status !== 'a_verifier') return false;
+    if (statusFilter === 'pret' && piece.status !== 'pret') return false;
+    if (statusFilter === 'error' && piece.analysis_status !== 'error') return false;
+    
+    // Other filters (duplicates, errors dropdown)
+    if (showDuplicates && !piece.is_duplicate) return false;
+    if (showErrors && piece.analysis_status !== 'error') return false;
+    
+    return true;
+  });
+
+  // Get filter label for display
+  const getFilterLabel = () => {
+    if (statusFilter === 'a_verifier') return 'À vérifier';
+    if (statusFilter === 'pret') return 'Prêtes';
+    if (statusFilter === 'error') return 'Erreurs';
+    if (showDuplicates) return 'Doublons';
+    if (showErrors) return 'Erreurs';
+    return null;
+  };
+
+  const hasActiveFilter = statusFilter || showDuplicates || showErrors;
+
   const handleUpload = async (files, forceUpload = false) => {
     setUploading(true);
     let uploaded = 0;

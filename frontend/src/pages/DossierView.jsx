@@ -518,14 +518,6 @@ const DossierView = () => {
     );
   }
 
-  // Apply filters
-  let filteredPieces = pieces;
-  if (showDuplicates) {
-    filteredPieces = pieces.filter(p => p.is_duplicate);
-  } else if (showErrors) {
-    filteredPieces = pieces.filter(p => p.analysis_status === 'error');
-  }
-
   const toVerifyCount = pieces.filter((p) => p.status === 'a_verifier').length;
   const readyCount = pieces.filter((p) => p.status === 'pret').length;
   const errorCount = pieces.filter((p) => p.analysis_status === 'error').length;

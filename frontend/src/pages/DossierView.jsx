@@ -61,6 +61,7 @@ import {
   AlertTriangle,
   Image,
   FileQuestion,
+  X,
 } from 'lucide-react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { PieceValidationModal } from '../components/PieceValidationModal';

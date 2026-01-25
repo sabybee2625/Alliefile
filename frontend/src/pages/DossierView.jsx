@@ -881,22 +881,6 @@ const DossierView = () => {
               </div>
             )}
 
-            {/* Filter indicator */}
-            {(showDuplicates || showErrors) && (
-              <div className="flex items-center gap-2 p-2 bg-slate-100 rounded-sm">
-                <span className="text-sm text-slate-600">
-                  Filtre actif: {showDuplicates ? 'Doublons' : 'Erreurs'}
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => { setShowDuplicates(false); setShowErrors(false); }}
-                >
-                  Effacer
-                </Button>
-              </div>
-            )}
-
             {filteredPieces.length === 0 ? (
               <Card className="border-slate-200 border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12">
@@ -904,15 +888,20 @@ const DossierView = () => {
                     <FileText className="w-8 h-8 text-slate-400" />
                   </div>
                   <h3 className="font-heading font-semibold text-slate-900 mb-1">
-                    {(showDuplicates || showErrors) ? 'Aucune pièce correspondante' : 'Aucune pièce'}
+                    {hasActiveFilter ? 'Aucune pièce correspondante' : 'Aucune pièce'}
                   </h3>
                   <p className="text-sm text-slate-500 mb-4">
-                    {(showDuplicates || showErrors) 
-                      ? 'Aucune pièce ne correspond au filtre sélectionné'
+                    {hasActiveFilter 
+                      ? `Aucune pièce ne correspond au filtre "${getFilterLabel()}"`
                       : 'Ajoutez votre première pièce au dossier'
                     }
                   </p>
-                  {!(showDuplicates || showErrors) && (
+                  {hasActiveFilter ? (
+                    <Button onClick={resetFilter} variant="outline" className="rounded-sm">
+                      <X className="w-4 h-4 mr-2" />
+                      Réinitialiser le filtre
+                    </Button>
+                  ) : (
                     <Button onClick={() => setUploadOpen(true)} className="bg-slate-900 hover:bg-slate-800 rounded-sm">
                       <Upload className="w-4 h-4 mr-2" />
                       Ajouter une pièce

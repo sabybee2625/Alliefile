@@ -726,7 +726,7 @@ const DossierView = () => {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="pieces" className="space-y-4">
+        <Tabs defaultValue="pieces" className="space-y-4" ref={tabsRef}>
           <TabsList>
             <TabsTrigger value="pieces" data-testid="tab-pieces">Pièces</TabsTrigger>
             <TabsTrigger value="chronology" data-testid="tab-chronology">Chronologie</TabsTrigger>
@@ -738,9 +738,34 @@ const DossierView = () => {
 
           {/* PIECES TAB */}
           <TabsContent value="pieces" className="space-y-4">
+            {/* Active Filter Banner */}
+            {hasActiveFilter && (
+              <div className="flex items-center justify-between p-3 bg-slate-100 border border-slate-200 rounded-sm" data-testid="filter-banner">
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-slate-600" />
+                  <span className="text-sm text-slate-700">
+                    Filtre actif : <strong>{getFilterLabel()}</strong>
+                  </span>
+                  <Badge variant="outline" className="ml-2">
+                    {filteredPieces.length} pièce{filteredPieces.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilter}
+                  className="rounded-sm text-slate-600 hover:text-slate-900"
+                  data-testid="reset-filter-btn"
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  Réinitialiser
+                </Button>
+              </div>
+            )}
+
             {/* Actions Bar */}
             {pieces.length > 0 && (
-              <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center justify-between flex-wrap gap-2" ref={piecesListRef}>
                 <div className="flex items-center gap-2">
                   {/* Selection Mode Toggle */}
                   <Button

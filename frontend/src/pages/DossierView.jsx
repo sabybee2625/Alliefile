@@ -115,6 +115,11 @@ const DossierView = () => {
   // Filter state
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [statusFilter, setStatusFilter] = useState(null); // null = all, 'a_verifier', 'pret', 'error'
+  
+  // Ref for scrolling to pieces list
+  const piecesListRef = useRef(null);
+  const tabsRef = useRef(null);
   
   // Duplicate modal state
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);

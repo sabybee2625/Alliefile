@@ -231,6 +231,23 @@ class DuplicateErrorDetail(BaseModel):
 class QueueAnalysisRequest(BaseModel):
     piece_ids: List[str] = []  # Empty = all pending pieces
 
+# Share link models for advanced sharing
+class ShareLinkCreateAdvanced(BaseModel):
+    expires_in_days: int = 7
+    piece_ids: Optional[List[str]] = None  # None = all pieces
+    filter_type: Optional[str] = None  # Filter by piece type
+    filter_status: Optional[str] = None  # Filter by status
+    filter_keywords: Optional[List[str]] = None
+    password: Optional[str] = None  # Optional password protection
+
+class PromoCodeCreate(BaseModel):
+    code: str
+    discount_percent: Optional[int] = None
+    discount_amount: Optional[float] = None
+    max_uses: int = -1  # -1 for unlimited
+    expires_at: Optional[str] = None
+    plan_restriction: Optional[str] = None  # Only for specific plan
+
 # ===================== AUTH HELPERS =====================
 
 def hash_password(password: str) -> str:
@@ -242,13 +259,13 @@ def verify_password(plain: str, hashed: str) -> bool:
 def create_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+        "exp": datetime.now(timezone.utc) + timedelta(hours=config.JWT_EXPIRATION_HOURS)
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(credentials.credentials, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -261,14 +278,51 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-def compute_file_hash(content: bytes) -> str:
-    """Compute SHA256 hash of file content"""
-    return hashlib.sha256(content).hexdigest()
+async def get_user_plan(user: dict) -> str:
+    """Get user's current plan, checking expiration"""
+    plan = user.get("plan", "free")
+    expires_at = user.get("plan_expires_at")
+    
+    if plan != "free" and expires_at:
+        if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
+            # Plan expired, revert to free
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"plan": "free", "plan_expires_at": None}}
+            )
+            return "free"
+    
+    return plan
+
+async def check_plan_limit(user: dict, limit_type: str, current_count: int = 0) -> bool:
+    """
+    Check if user is within their plan limits
+    Returns True if within limits, raises HTTPException if exceeded
+    """
+    plan = await get_user_plan(user)
+    limits = get_plan_limits(plan)
+    
+    limit_value = getattr(limits, limit_type, -1)
+    
+    if limit_value == -1:  # Unlimited
+        return True
+    
+    if current_count >= limit_value:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Limite du plan {plan} atteinte pour {limit_type}. Passez à un plan supérieur."
+        )
+    
+    return True
 
 # ===================== AUTH ROUTES =====================
 
 @api_router.post("/auth/register", response_model=TokenResponse)
-async def register(data: UserCreate):
+async def register(data: UserCreate, request: Request):
+    # Rate limiting
+    client_ip = get_client_ip(request)
+    await check_rate_limit_register(request, client_ip)
+    
     existing = await db.users.find_one({"email": data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")

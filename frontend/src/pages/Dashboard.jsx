@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import {
   Dialog,
@@ -15,8 +16,9 @@ import {
   DialogFooter,
 } from '../components/ui/dialog';
 import { Textarea } from '../components/ui/textarea';
-import { dossiersApi } from '../lib/api';
+import { dossiersApi, userApi } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import {
   Plus,
@@ -26,6 +28,11 @@ import {
   Trash2,
   MoreVertical,
   Calendar,
+  Crown,
+  Zap,
+  TrendingUp,
+  HardDrive,
+  Share2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -45,6 +52,8 @@ import {
 } from '../components/ui/alert-dialog';
 
 const Dashboard = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [dossiers, setDossiers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -53,6 +62,7 @@ const Dashboard = () => {
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [userStats, setUserStats] = useState(null);
 
   const fetchDossiers = async () => {
     try {

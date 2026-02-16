@@ -1,207 +1,227 @@
 # Dossier Juridique Intelligent - PRD
 
 ## Problem Statement
-Application web de dossier juridique intelligent destinée à organiser, comprendre et exploiter automatiquement des pièces juridiques. L'utilisateur ne doit pas avoir à remplir manuellement les informations des pièces. Workflow: Je dépose → l'application lit → elle propose → je valide.
+Application web SaaS de dossier juridique intelligent destinée à organiser, comprendre et exploiter automatiquement des pièces juridiques. Workflow: Je dépose → l'application lit → elle propose → je valide.
 
 ## User Personas
 - **Avocats** : Organiser les pièces d'un dossier client
 - **Particuliers** : Gérer leurs documents juridiques pour une affaire
 - **Paralegaux** : Préparer et classer les pièces pour les avocats
 
-## Core Requirements (Static)
-1. Upload de documents (PDF, JPG, PNG, DOCX, DOC, HEIC)
-2. Analyse IA automatique (type, date, titre, résumé factuel, mots-clés)
-3. Indices de confiance + extraits justificatifs pour chaque proposition
-4. Validation/modification par l'utilisateur
-5. Numérotation stable des pièces
-6. Vue chronologique des faits
-7. Exports professionnels (PDF chronologie, DOCX narrative, CSV, ZIP)
-8. Assistant de rédaction sécurisé (basé sur pièces validées uniquement)
-9. Liens de partage sécurisés pour avocats (lecture seule + accès chronologie)
-10. Authentification JWT
-
 ## Architecture
 - **Frontend**: React + TailwindCSS + Shadcn/UI
-- **Backend**: FastAPI (Python)
+- **Backend**: FastAPI (Python) avec architecture modulaire
 - **Database**: MongoDB
 - **AI**: Gemini 2.5 Flash via Emergent LLM Key
+- **Payments**: Stripe (abonnements)
+- **Storage**: Local (abstraite pour migration S3/R2)
 
-## What's Been Implemented
+## V4.0 - Transformation SaaS (Fév 2025)
 
-### V3.1 - Correctifs Critiques (Jan 2025)
+### 1️⃣ SÉCURITÉ & INFRASTRUCTURE ✅ DONE
 
-#### A) Prévisualisation dans la validation ✅ (FIXED)
-- [x] Bouton "Voir" dans `PieceValidationModal` utilise maintenant `FilePreviewModal`
-- [x] PDF/images : prévisualisation inline
-- [x] DOCX : message "prévisualisation non disponible" + bouton "Télécharger"
-- [x] Accès au fichier original pendant la validation sans quitter le modal
+#### Configuration centralisée (`config.py`)
+- [x] JWT_SECRET obligatoire en production (refus démarrage si absent)
+- [x] CORS restreint au domaine frontend en production
+- [x] Mode development/production configurable (APP_ENV)
+- [x] Variables d'environnement pour tous les secrets
 
-#### B) Détection de doublons améliorée ✅ (FIXED)
-- [x] Hash SHA256 calculé sur les bytes bruts du fichier
-- [x] Vérification doublon basée sur (dossier_id, file_hash, file_size)
-- [x] HTTP 409 avec détails: `{existing_piece_id, existing_piece_numero, existing_filename}`
-- [x] **Modale "Doublon détecté"** dans le frontend avec:
-  - "Pièce X : nom_fichier.ext" (pièce existante)
-  - Bouton "Annuler (ne pas importer)" (par défaut)
-  - Bouton "Importer quand même" (force_upload=true)
-- [x] Index MongoDB pour performance
+#### Rate Limiting (`rate_limiter.py`)
+- [x] Login: 5 requêtes/minute par IP
+- [x] Register: 3 requêtes/minute par IP
+- [x] Analyse IA: 10 requêtes/minute par utilisateur
+- [x] Assistant: 5 requêtes/minute par utilisateur
 
-#### C) Upload DOCX corrigé ✅ (FIXED)
-- [x] Le fichier est lu UNE SEULE fois avec `await file.read()`
-- [x] Taille vérifiée: `file_size = len(content)` stockée en DB
-- [x] Fichiers vides (0 bytes) rejetés avec HTTP 400
-- [x] Vérification post-écriture: taille sur disque == taille en mémoire
-- [x] Téléchargement retourne le fichier identique (hash SHA256 vérifié)
+#### Middlewares de sécurité (`security.py`)
+- [x] SecurityHeadersMiddleware (X-Frame-Options, HSTS, etc.)
+- [x] ErrorHandlingMiddleware (pas de stack trace en prod)
+- [x] AccessLogMiddleware (logs d'accès aux endpoints sensibles)
 
-### V3 - Phase 4 Bug Fixes (Jan 2025)
+#### Abstraction de stockage (`storage.py`)
+- [x] Interface abstraite StorageBackend
+- [x] LocalStorage implémenté
+- [x] S3Storage préparé (AWS S3, Cloudflare R2, MinIO)
+- [x] Migration facile via STORAGE_BACKEND env var
 
-#### P0 - Téléchargement & Prévisualisation Sécurisés ✅
-- [x] Endpoint `/api/pieces/{id}/file` avec authentification JWT
-- [x] Endpoint `/api/pieces/{id}/preview` pour prévisualisation inline
-- [x] Blocage des accès non authentifiés (401/403)
-- [x] `FilePreviewModal.jsx` : modale de prévisualisation intégrée
-  - PDF et images : prévisualisation inline
-  - DOCX et autres : message + bouton téléchargement
-  - Bouton "Télécharger" toujours disponible
+### 2️⃣ SYSTÈME DE PLANS & LIMITES ✅ DONE
 
-#### P1 - Fiabilité Ingestion ✅
-- [x] **Détection de doublons (SHA256)** : 
-  - Hash calculé à l'upload
-  - Retourne 409 si doublon existant
-  - Option `force_upload=true` pour importer quand même
-  - Badge "Doublon" visible sur les pièces
-- [x] **File d'attente d'analyse** :
-  - Endpoint `/api/dossiers/{id}/queue-analysis` pour mettre en queue
-  - Endpoint `/api/dossiers/{id}/queue-status` pour statuts
-  - Limite de 2 analyses concurrentes
-  - Statuts : pending, queued, analyzing, complete, error
-  - Boutons "Analyser tout" et "Relancer les échecs"
-  - Polling automatique de l'état de la queue
-- [x] **Suppression en lot** :
-  - Endpoint `/api/dossiers/{id}/pieces/delete-many`
-  - Mode sélection avec checkboxes
-  - Boutons "Tout sélectionner" / "Désélectionner"
-  - Bouton "Supprimer (N)" avec confirmation
-  - Suppression des pièces en erreur
+#### Plans définis
+- **Free**: 1 dossier, 20 pièces, 3 liens partage, 1 assistant/jour, pas de DOCX
+- **Standard** (9.90€/mois): 5 dossiers, 500 pièces, exports PDF+DOCX, assistant illimité
+- **Premium** (19.90€/mois): Illimité, support prioritaire
 
-#### P2 - Ergonomie Saisie des Dates ✅
-- [x] **Nouveau composant `DateInput.jsx`** :
-  - Saisie clavier format JJ/MM/AAAA avec auto-formatage
-  - Bouton calendrier avec popover
-  - **Sélecteur de mois** (dropdown)
-  - **Sélecteur d'année** (dropdown, 100 ans en arrière)
-  - Checkbox "Date inconnue" (met la date à null)
-  - Bouton X pour effacer la date
+#### Vérification des limites
+- [x] Middleware check_plan_limit() sur création dossier/pièce
+- [x] Statistiques utilisateur via /api/auth/stats
+- [x] Affichage limites dans le dashboard
 
-### V2 - Exports & Assistant (Jan 2025)
+### 3️⃣ MONÉTISATION STRIPE ✅ DONE
 
-#### A) Exports Juridiques Pro
-- [x] Export PDF A4 de la chronologie des faits (structuré, professionnel)
-  - En-tête: nom dossier, référence, date génération
-  - Chaque entrée: date (JJ/MM/AAAA), titre, type, résumé factuel, référence Pièce X
-  - Mise en page sobre Swiss, marges A4
-- [x] Export DOCX chronologie narrative
-  - Format: "Le <date>, [fait]... (Pièce X)."
-  - Un paragraphe par fait
-  - Texte modifiable dans Word
+#### Endpoints de paiement
+- [x] GET /api/payments/plans - Liste des plans
+- [x] POST /api/payments/checkout - Création session Stripe
+- [x] GET /api/payments/status/{session_id} - Vérification paiement
+- [x] POST /api/webhook/stripe - Webhooks Stripe
+- [x] POST /api/payments/promo-codes - Création codes promo
+- [x] POST /api/payments/validate-promo - Validation codes promo
 
-#### B) Assistant de Rédaction Sécurisé (Agnostique)
-- [x] Travaille uniquement sur pièces VALIDÉES (jamais PDFs bruts)
-- [x] Types de documents: Exposé des faits, Chronologie narrative, Courrier avocat, Projet de requête
-- [x] **Sélecteur de juridiction** : Pénal, JAF, Prud'hommes, Administratif, Civil, Commercial
-- [x] Sélection de période et pièces à inclure
-- [x] Règles strictes: pas d'invention, citations (Pièce X), "À confirmer" si non sourcé
-- [x] Sortie: affichée + copiable + téléchargeable
+#### Frontend paiement (`Pricing.jsx`)
+- [x] Page de tarifs avec 3 plans
+- [x] Toggle mensuel/annuel (-17%)
+- [x] Validation codes promo
+- [x] Redirection vers Stripe Checkout
+- [x] Gestion success/cancel
 
-#### C) Support Fichiers Étendu
-- [x] Formats supportés: PDF, JPG, PNG, DOCX, DOC, HEIC (iPhone)
-- [x] Conversion HEIC → JPG automatique
-- [x] Extraction texte serveur (DOCX, PDF)
-- [x] OCR/Vision IA pour images et scans
-- [x] Limite configurable (50 Mo par défaut)
-- [x] Statut d'analyse: en attente, en cours, terminé, erreur
-- [x] Bouton "Relancer l'analyse" pour ré-OCR
+### 4️⃣ DASHBOARD UTILISATEUR ✅ DONE
 
-#### D) Qualité & Confiance
-- [x] Niveau de confiance (faible/moyen/fort) affiché avec icônes
-- [x] Extrait justificatif mis en évidence dans validation
-- [x] Badges de confiance sur chaque champ proposé
+- [x] Affichage du plan actuel
+- [x] Statistiques: dossiers, pièces, stockage, liens actifs
+- [x] Bouton upgrade vers plan supérieur
+- [x] Limites affichées (X / max)
 
-#### E) Partage Avocat Amélioré
-- [x] Accès à la chronologie (onglet dédié)
-- [x] Téléchargement PDF chronologie
-- [x] Vue des pièces avec résumés
+## Fonctionnalités précédentes (V1-V3)
 
-## API Endpoints (V3)
+### Core Features ✅
+- [x] Authentification JWT
+- [x] CRUD Dossiers avec isolation par utilisateur
+- [x] Upload pièces (PDF, JPG, PNG, DOCX, DOC, HEIC)
+- [x] Détection doublons SHA256 avec modale frontend
+- [x] Analyse IA automatique via file d'attente
+- [x] Validation pièces avec indices de confiance
+- [x] Numérotation automatique stable
+- [x] Prise de photo native (mobile/desktop)
 
-### Auth
-- `POST /api/auth/register` - Inscription
-- `POST /api/auth/login` - Connexion
-- `GET /api/auth/me` - Profil utilisateur
+### Exports ✅
+- [x] PDF chronologie professionnelle
+- [x] DOCX chronologie narrative
+- [x] CSV sommaire
+- [x] ZIP des pièces
 
-### Dossiers
-- `CRUD /api/dossiers` - Gestion dossiers
-- `POST /api/dossiers/{id}/renumber` - Renuméroter pièces
+### Assistant de rédaction ✅
+- [x] Exposé des faits
+- [x] Chronologie narrative
+- [x] Courrier avocat
+- [x] Projet de requête (agnostique juridiction)
+- [x] Citations obligatoires (Pièce X)
 
-### Pièces
-- `POST /api/dossiers/{id}/pieces` - Upload pièce (avec détection doublons)
-- `GET /api/dossiers/{id}/pieces` - Liste pièces
-- `GET /api/pieces/{id}/file` - Télécharger fichier (auth requise)
-- `GET /api/pieces/{id}/preview` - Prévisualiser fichier (auth requise)
-- `POST /api/pieces/{id}/analyze` - Lancer analyse IA
-- `POST /api/pieces/{id}/reanalyze` - Relancer analyse
-- `POST /api/pieces/{id}/validate` - Valider pièce
-- `DELETE /api/pieces/{id}` - Supprimer une pièce
-- `POST /api/dossiers/{id}/pieces/delete-many` - Supprimer plusieurs pièces
-- `POST /api/dossiers/{id}/pieces/delete-errors` - Supprimer pièces en erreur
+### Partage sécurisé ✅
+- [x] Liens expirables (7 jours)
+- [x] Vue lecture seule
+- [x] Téléchargement pièces
+- [x] Export PDF chronologie
 
-### File d'attente
-- `POST /api/dossiers/{id}/queue-analysis` - Mettre pièces en queue
-- `POST /api/dossiers/{id}/queue-failed` - Re-queue les échecs
-- `POST /api/dossiers/{id}/process-queue` - Traiter la queue
-- `GET /api/dossiers/{id}/queue-status` - Statut de la queue
-
-### Exports
-- `GET /api/dossiers/{id}/chronology` - Chronologie JSON
-- `GET /api/dossiers/{id}/export/pdf` - Export PDF chronologie
-- `GET /api/dossiers/{id}/export/docx` - Export DOCX narrative
-- `GET /api/dossiers/{id}/export/csv` - Export CSV sommaire
-- `GET /api/dossiers/{id}/export/zip` - Export ZIP pièces
-
-### Assistant
-- `POST /api/dossiers/{id}/assistant` - Générer document IA
-
-### Partage
-- `POST /api/dossiers/{id}/share` - Créer lien partage
-- `GET /api/shared/{token}` - Vue partagée
-- `GET /api/shared/{token}/piece/{id}/file` - Fichier partagé
-- `GET /api/shared/{token}/export/pdf` - PDF pour avocat
+### UX Améliorée ✅
+- [x] Cartes stats cliquables (filtrage rapide)
+- [x] Suppression en lot avec checkboxes
+- [x] Prévisualisation fichiers dans modales
+- [x] Saisie date améliorée (clavier + calendrier année/mois)
 
 ## Prioritized Backlog
 
-### P0 (Critical) - ✅ DONE
-- All core features implemented
-- Phase 4 bug fixes completed
+### P0 (À faire ensuite) 🔴
+- [ ] **Filtrage avancé** : par type, mots-clés, date, statut
+- [ ] **Recherche plein texte** : titre + résumé validé
+- [ ] **Partage sélectif** : choisir pièces/filtre à partager
+- [ ] **Logs d'accès partage** : date, IP, téléchargements
 
-### P1 (High Priority)
-- [ ] Recherche full-text dans les pièces
-- [ ] Drag & drop pour réordonner les pièces
-- [ ] Export PDF du résultat assistant
+### P1 (Important) 🟡
+- [ ] Expiration partage configurable (1-30 jours)
+- [ ] Révocation manuelle des liens
+- [ ] Export ciblé (filtré)
+- [ ] Protection partage par mot de passe
 
-### P2 (Medium Priority)
-- [ ] Tags/catégories personnalisées
-- [ ] Historique des modifications
-- [ ] Statistiques du dossier
+### P2 (Medium) 🟠
+- [ ] Migration effective vers S3/R2
+- [ ] Panel admin pour codes promo
+- [ ] Historique d'activité utilisateur
 - [ ] Notifications par email
 
-### P3 (Nice to Have)
+### P3 (Nice to have) 🔵
 - [ ] Mode sombre
 - [ ] Application mobile PWA
-- [ ] Intégration Google Drive
 - [ ] Multi-utilisateurs par dossier
+- [ ] Intégration Google Drive
 
-## Next Tasks List
-1. Implémenter recherche full-text
-2. Export PDF du résultat assistant
-3. Drag & drop réordonnement pièces
-4. Tags/catégories personnalisées
+## API Endpoints (V4)
+
+### Auth
+- POST /api/auth/register - Inscription (rate limited)
+- POST /api/auth/login - Connexion (rate limited)
+- GET /api/auth/me - Profil utilisateur
+- GET /api/auth/stats - Statistiques utilisateur
+
+### Payments
+- GET /api/payments/plans - Plans disponibles
+- POST /api/payments/checkout - Créer session paiement
+- GET /api/payments/status/{session_id} - Statut paiement
+- POST /api/payments/validate-promo - Valider code promo
+- POST /api/payments/promo-codes - Créer code promo
+- POST /api/webhook/stripe - Webhook Stripe
+
+### Dossiers
+- CRUD /api/dossiers (avec limites plan)
+- POST /api/dossiers/{id}/renumber
+
+### Pièces
+- POST /api/dossiers/{id}/pieces (upload avec doublon check)
+- GET /api/pieces/{id}/file (auth required)
+- POST /api/pieces/{id}/analyze (rate limited)
+- POST /api/dossiers/{id}/queue-analysis
+- POST /api/dossiers/{id}/pieces/delete-many
+
+### Exports
+- GET /api/dossiers/{id}/export/pdf
+- GET /api/dossiers/{id}/export/docx
+- GET /api/dossiers/{id}/export/csv
+- GET /api/dossiers/{id}/export/zip
+
+### Assistant
+- POST /api/dossiers/{id}/assistant (rate limited)
+
+### Partage
+- POST /api/dossiers/{id}/share
+- GET /api/shared/{token}
+
+## Environment Variables
+
+### Required
+- MONGO_URL - MongoDB connection string
+- JWT_SECRET - Secret for JWT tokens (REQUIRED in production)
+- CORS_ORIGINS - Allowed origins (REQUIRED in production)
+
+### Optional
+- APP_ENV - development | production (default: development)
+- STORAGE_BACKEND - local | s3 | r2 (default: local)
+- STRIPE_API_KEY - Stripe API key
+- EMERGENT_LLM_KEY - LLM integration key
+- RATE_LIMIT_* - Various rate limits
+
+### S3/R2 (for production storage)
+- S3_BUCKET, S3_REGION, S3_ACCESS_KEY, S3_SECRET_KEY, S3_ENDPOINT_URL
+
+## Files Structure
+
+```
+/app/backend/
+├── server.py       # Main FastAPI app
+├── config.py       # Centralized configuration
+├── rate_limiter.py # Rate limiting
+├── security.py     # Security middlewares
+├── storage.py      # Storage abstraction
+├── payments.py     # Stripe integration
+└── .env            # Environment variables
+
+/app/frontend/src/
+├── pages/
+│   ├── Dashboard.jsx   # With plan info
+│   ├── DossierView.jsx # Main view
+│   ├── Pricing.jsx     # Subscription plans
+│   └── ...
+├── components/
+│   ├── CameraCapture.jsx
+│   ├── DateInput.jsx
+│   ├── FilePreviewModal.jsx
+│   └── ...
+└── lib/
+    └── api.js         # API client with userApi
+```

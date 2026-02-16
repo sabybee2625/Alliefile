@@ -1927,7 +1927,7 @@ async def root():
 async def health():
     return {
         "status": "healthy", 
-        "max_file_size_mb": config.config.MAX_FILE_SIZE_MB,
+        "max_file_size_mb": config.MAX_FILE_SIZE_MB,
         "environment": config.ENV.value,
         "stripe_configured": config.is_stripe_configured,
         "s3_configured": config.is_s3_configured

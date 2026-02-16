@@ -521,7 +521,7 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
     
     pieces = await db.pieces.find({"dossier_id": dossier_id}).to_list(1000)
     for piece in pieces:
-        filepath = UPLOAD_DIR / piece["filename"]
+        filepath = config.UPLOAD_DIR / piece["filename"]
         if filepath.exists():
             filepath.unlink()
     
@@ -638,8 +638,8 @@ async def upload_piece(
     if file_size == 0:
         raise HTTPException(status_code=400, detail="Le fichier est vide (0 bytes)")
     
-    if file_size > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {MAX_FILE_SIZE_MB} MB)")
+    if file_size > config.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {config.MAX_FILE_SIZE_MB} MB)")
     
     # Compute hash for duplicate detection on raw bytes
     file_hash = compute_file_hash(content)
@@ -683,7 +683,7 @@ async def upload_piece(
     # Save file - use stored content bytes
     piece_id = str(uuid.uuid4())
     filename = f"{piece_id}{ext}"
-    filepath = UPLOAD_DIR / filename
+    filepath = config.UPLOAD_DIR / filename
     
     async with aiofiles.open(filepath, 'wb') as f:
         await f.write(content)
@@ -775,7 +775,7 @@ async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = UPLOAD_DIR / piece["filename"]
+    filepath = config.UPLOAD_DIR / piece["filename"]
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -796,7 +796,7 @@ async def preview_piece_file(piece_id: str, user: dict = Depends(get_current_use
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = UPLOAD_DIR / piece["filename"]
+    filepath = config.UPLOAD_DIR / piece["filename"]
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -931,7 +931,7 @@ async def process_analysis_queue(dossier_id: str, user: dict = Depends(get_curre
             )
             
             # Perform analysis
-            filepath = UPLOAD_DIR / piece["filename"]
+            filepath = config.UPLOAD_DIR / piece["filename"]
             ai_proposal = await analyze_document_with_ai(
                 filepath, piece["file_type"], piece["original_filename"], piece["id"]
             )
@@ -1027,7 +1027,7 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
     )
     
     try:
-        filepath = UPLOAD_DIR / piece["filename"]
+        filepath = config.UPLOAD_DIR / piece["filename"]
         ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
         
         await db.pieces.update_one(
@@ -1089,7 +1089,7 @@ async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user))
     )
     
     try:
-        filepath = UPLOAD_DIR / piece["filename"]
+        filepath = config.UPLOAD_DIR / piece["filename"]
         ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
         
         await db.pieces.update_one(
@@ -1148,7 +1148,7 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = UPLOAD_DIR / piece["filename"]
+    filepath = config.UPLOAD_DIR / piece["filename"]
     if filepath.exists():
         filepath.unlink()
     
@@ -1174,7 +1174,7 @@ async def delete_many_pieces(
     
     deleted_count = 0
     for piece in pieces:
-        filepath = UPLOAD_DIR / piece["filename"]
+        filepath = config.UPLOAD_DIR / piece["filename"]
         if filepath.exists():
             filepath.unlink()
         await db.pieces.delete_one({"id": piece["id"]})
@@ -1196,7 +1196,7 @@ async def delete_error_pieces(dossier_id: str, user: dict = Depends(get_current_
     
     deleted_count = 0
     for piece in pieces:
-        filepath = UPLOAD_DIR / piece["filename"]
+        filepath = config.UPLOAD_DIR / piece["filename"]
         if filepath.exists():
             filepath.unlink()
         await db.pieces.delete_one({"id": piece["id"]})
@@ -1379,7 +1379,7 @@ async def export_zip(dossier_id: str, user: dict = Depends(get_current_user)):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for p in pieces:
-            filepath = UPLOAD_DIR / p["filename"]
+            filepath = config.UPLOAD_DIR / p["filename"]
             if filepath.exists():
                 ext = Path(p["original_filename"]).suffix
                 arcname = f"Piece_{p['numero']}{ext}"
@@ -1832,7 +1832,7 @@ async def get_shared_piece_file(token: str, piece_id: str):
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
     
-    filepath = UPLOAD_DIR / piece["filename"]
+    filepath = config.UPLOAD_DIR / piece["filename"]
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -1927,7 +1927,7 @@ async def root():
 async def health():
     return {
         "status": "healthy", 
-        "max_file_size_mb": config.MAX_FILE_SIZE_MB,
+        "max_file_size_mb": config.config.MAX_FILE_SIZE_MB,
         "environment": config.ENV.value,
         "stripe_configured": config.is_stripe_configured,
         "s3_configured": config.is_s3_configured

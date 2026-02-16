@@ -1917,37 +1917,72 @@ async def get_shared_chronology_pdf(token: str):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Dossier Juridique Intelligent API", "version": "2.1"}
+    return {
+        "message": "Dossier Juridique Intelligent API", 
+        "version": "3.0.0",
+        "environment": config.ENV.value
+    }
 
 @api_router.get("/health")
 async def health():
-    return {"status": "healthy", "max_file_size_mb": MAX_FILE_SIZE_MB}
+    return {
+        "status": "healthy", 
+        "max_file_size_mb": config.MAX_FILE_SIZE_MB,
+        "environment": config.ENV.value,
+        "stripe_configured": config.is_stripe_configured,
+        "s3_configured": config.is_s3_configured
+    }
 
 # Include router
 app.include_router(api_router)
 
+# Security middlewares (order matters - added last = executed first)
+app.add_middleware(AccessLogMiddleware)
+app.add_middleware(ErrorHandlingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=config.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.on_event("startup")
 async def startup_db_indexes():
-    """Create indexes for duplicate detection and performance"""
+    """Create indexes for performance and security"""
     try:
-        # Unique index for duplicate detection (dossier_id + file_hash + file_size)
+        # User indexes
+        await db.users.create_index("email", unique=True, name="idx_user_email")
+        
+        # Dossier indexes
+        await db.dossiers.create_index("user_id", name="idx_dossier_user")
+        
+        # Piece indexes
         await db.pieces.create_index(
             [("dossier_id", 1), ("file_hash", 1), ("file_size", 1)],
-            unique=False,  # Not unique because force_upload allows duplicates
+            unique=False,
             name="idx_duplicate_detection"
         )
-        # Index for dossier pieces listing
         await db.pieces.create_index([("dossier_id", 1), ("numero", 1)], name="idx_dossier_pieces")
-        # Index for queue processing
         await db.pieces.create_index([("dossier_id", 1), ("analysis_status", 1)], name="idx_analysis_queue")
+        await db.pieces.create_index([("dossier_id", 1), ("status", 1)], name="idx_piece_status")
+        await db.pieces.create_index([("dossier_id", 1), ("file_type", 1)], name="idx_piece_type")
+        
+        # Share link indexes
+        await db.share_links.create_index("token", unique=True, name="idx_share_token")
+        await db.share_links.create_index("dossier_id", name="idx_share_dossier")
+        await db.share_links.create_index("expires_at", name="idx_share_expiry")
+        
+        # Share access logs
+        await db.share_access_logs.create_index("share_token", name="idx_access_log_token")
+        await db.share_access_logs.create_index("timestamp", name="idx_access_log_time")
+        
+        # Promo codes
+        await db.promo_codes.create_index("code", unique=True, name="idx_promo_code")
+        
         logger.info("MongoDB indexes created successfully")
     except Exception as e:
         logger.warning(f"Index creation warning (may already exist): {e}")

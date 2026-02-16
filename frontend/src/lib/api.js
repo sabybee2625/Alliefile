@@ -140,4 +140,19 @@ export const sharedApi = {
   getChronologyPdfUrl: (token) => `${API_URL}/shared/${token}/export/pdf`,
 };
 
+// User stats & subscription
+export const userApi = {
+  getStats: () => api.get('/auth/stats'),
+  getPlans: () => api.get('/payments/plans'),
+  createCheckout: (planId, billingPeriod, promoCode = null) => 
+    api.post('/payments/checkout', {
+      plan_id: planId,
+      billing_period: billingPeriod,
+      promo_code: promoCode,
+    }),
+  checkPaymentStatus: (sessionId) => api.get(`/payments/status/${sessionId}`),
+  validatePromoCode: (code, planId) => 
+    api.post('/payments/validate-promo', { code, plan_id: planId }),
+};
+
 export default api;

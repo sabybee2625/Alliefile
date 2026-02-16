@@ -135,6 +135,7 @@ const Dashboard = () => {
       toast.success('Dossier supprimé');
       setDeleteTarget(null);
       fetchDossiers();
+      fetchUserStats();
     } catch (error) {
       toast.error('Erreur lors de la suppression');
     } finally {
@@ -142,9 +143,86 @@ const Dashboard = () => {
     }
   };
 
+  const getPlanBadgeColor = (plan) => {
+    switch (plan) {
+      case 'premium': return 'bg-amber-100 text-amber-700 border-amber-300';
+      case 'standard': return 'bg-blue-100 text-blue-700 border-blue-300';
+      default: return 'bg-slate-100 text-slate-600 border-slate-300';
+    }
+  };
+
+  const getPlanIcon = (plan) => {
+    switch (plan) {
+      case 'premium': return <Crown className="w-4 h-4" />;
+      case 'standard': return <Zap className="w-4 h-4" />;
+      default: return null;
+    }
+  };
+
   return (
     <Layout>
       <div className="space-y-8">
+        {/* Plan Status Banner */}
+        {userStats && (
+          <Card className="border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+            <CardContent className="py-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <Badge variant="outline" className={`${getPlanBadgeColor(userStats.plan)} flex items-center gap-1`}>
+                    {getPlanIcon(userStats.plan)}
+                    Plan {userStats.plan.charAt(0).toUpperCase() + userStats.plan.slice(1)}
+                  </Badge>
+                  <div className="flex items-center gap-6 text-sm text-slate-600">
+                    <span className="flex items-center gap-1">
+                      <FolderOpen className="w-4 h-4" />
+                      {userStats.total_dossiers}
+                      {userStats.plan_limits.max_dossiers !== -1 && 
+                        ` / ${userStats.plan_limits.max_dossiers}`
+                      } dossiers
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <FileText className="w-4 h-4" />
+                      {userStats.total_pieces}
+                      {userStats.plan_limits.max_total_pieces !== -1 && 
+                        ` / ${userStats.plan_limits.max_total_pieces}`
+                      } pièces
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <HardDrive className="w-4 h-4" />
+                      {userStats.storage_used_mb.toFixed(1)} Mo
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Share2 className="w-4 h-4" />
+                      {userStats.active_share_links} liens actifs
+                    </span>
+                  </div>
+                </div>
+                {userStats.plan === 'free' && (
+                  <Button
+                    onClick={() => navigate('/pricing')}
+                    className="bg-blue-600 hover:bg-blue-700 rounded-sm"
+                    size="sm"
+                  >
+                    <TrendingUp className="w-4 h-4 mr-2" />
+                    Passer à Standard
+                  </Button>
+                )}
+                {userStats.plan === 'standard' && (
+                  <Button
+                    onClick={() => navigate('/pricing')}
+                    variant="outline"
+                    className="border-amber-300 text-amber-700 hover:bg-amber-50 rounded-sm"
+                    size="sm"
+                  >
+                    <Crown className="w-4 h-4 mr-2" />
+                    Passer à Premium
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

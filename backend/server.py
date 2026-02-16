@@ -91,6 +91,12 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
+    
+    @validator('password')
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError('Le mot de passe doit contenir au moins 8 caractères')
+        return v
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -100,7 +106,21 @@ class UserResponse(BaseModel):
     id: str
     email: str
     name: str
+    plan: str = "free"
+    plan_expires_at: Optional[str] = None
     created_at: str
+
+class UserStats(BaseModel):
+    total_dossiers: int
+    total_pieces: int
+    pieces_ready: int
+    pieces_to_verify: int
+    pieces_by_type: Dict[str, int]
+    active_share_links: int
+    storage_used_mb: float
+    plan: str
+    plan_limits: Dict[str, Any]
+    assistant_uses_today: int
 
 class TokenResponse(BaseModel):
     access_token: str

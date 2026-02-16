@@ -71,6 +71,11 @@ function AppRoutes() {
       
       {/* Shared dossier (public, no auth required) */}
       <Route path="/shared/:token" element={<SharedDossier />} />
+      
+      {/* Pricing page (semi-public) */}
+      <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/subscription/success" element={<PricingPage />} />
+      <Route path="/subscription/cancel" element={<PricingPage />} />
 
       {/* Protected routes */}
       <Route

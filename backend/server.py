@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query, Body
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query, Body, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -7,8 +7,8 @@ from fastapi.responses import FileResponse, StreamingResponse, Response
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional
+from pydantic import BaseModel, Field, EmailStr, validator
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
@@ -23,16 +23,41 @@ import tempfile
 import hashlib
 import asyncio
 
+# Load environment before importing config
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Import our modules
+from config import config, get_plan_limits, PLAN_LIMITS
+from rate_limiter import (
+    rate_limiter, 
+    check_rate_limit_login, 
+    check_rate_limit_register,
+    check_rate_limit_analysis,
+    check_rate_limit_assistant,
+    get_client_ip
+)
+from security import (
+    SecurityHeadersMiddleware,
+    ErrorHandlingMiddleware,
+    AccessLogMiddleware,
+    log_share_access,
+    validate_user_owns_resource
+)
+from storage import get_storage_backend, compute_file_hash, LocalStorage
 
-# Create the main app
-app = FastAPI(title="Dossier Juridique Intelligent")
+# MongoDB connection
+client = AsyncIOMotorClient(config.MONGO_URL)
+db = client[config.DB_NAME]
+
+# Create the main app with production settings
+app = FastAPI(
+    title="Dossier Juridique Intelligent",
+    description="SaaS sécurisé pour la gestion de dossiers juridiques",
+    version="2.0.0",
+    docs_url="/api/docs" if config.DEBUG else None,  # Disable docs in production
+    redoc_url="/api/redoc" if config.DEBUG else None,
+)
 
 # Create router with /api prefix
 api_router = APIRouter(prefix="/api")
@@ -40,25 +65,22 @@ api_router = APIRouter(prefix="/api")
 # Security
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-JWT_SECRET = os.environ.get("JWT_SECRET", "legal-dossier-secret-key-2024")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
 
-# Upload directory
-UPLOAD_DIR = ROOT_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-EXPORTS_DIR = ROOT_DIR / "exports"
-EXPORTS_DIR.mkdir(exist_ok=True)
-
-# Config
-MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "50"))
-MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-MAX_CONCURRENT_ANALYSES = 2  # Per dossier
-ANALYSIS_RATE_LIMIT_SECONDS = 2  # Min seconds between analysis requests
+# Storage backend (abstracted for S3 migration)
+storage = get_storage_backend()
 
 # Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_level = logging.DEBUG if config.DEBUG else logging.INFO
+logging.basicConfig(
+    level=log_level, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Log startup info
+logger.info(f"Starting application in {config.ENV.value} mode")
+if config.IS_PRODUCTION:
+    logger.info("Production mode: API docs disabled, security headers enabled")
 
 # Analysis queue lock (simple in-memory for now)
 analysis_locks = {}

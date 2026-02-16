@@ -458,6 +458,289 @@ async def get_user_stats(user: dict = Depends(get_current_user)):
         assistant_uses_today=assistant_uses
     )
 
+# ===================== PAYMENT ROUTES =====================
+
+from payments import (
+    SUBSCRIPTION_PLANS, 
+    CreateCheckoutRequest, 
+    CheckoutResponse,
+    get_plan_price,
+    validate_promo_code,
+    apply_promo_discount,
+    increment_promo_usage,
+    create_checkout_session,
+    get_checkout_status,
+    handle_stripe_webhook,
+    STRIPE_AVAILABLE
+)
+
+@api_router.get("/payments/plans")
+async def get_subscription_plans():
+    """Get available subscription plans"""
+    return {
+        "plans": SUBSCRIPTION_PLANS,
+        "stripe_available": STRIPE_AVAILABLE
+    }
+
+@api_router.post("/payments/checkout", response_model=CheckoutResponse)
+async def create_payment_checkout(
+    data: CreateCheckoutRequest,
+    request: Request,
+    user: dict = Depends(get_current_user)
+):
+    """Create a Stripe checkout session for subscription"""
+    if not STRIPE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Paiements non disponibles actuellement")
+    
+    api_key = os.environ.get("STRIPE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Stripe non configuré")
+    
+    # Validate plan
+    if data.plan_id not in SUBSCRIPTION_PLANS:
+        raise HTTPException(status_code=400, detail="Plan invalide")
+    
+    # Get base price (SERVER-SIDE only)
+    base_amount, currency = get_plan_price(data.plan_id, data.billing_period)
+    
+    # Validate promo code
+    discount_info = {"valid": False}
+    if data.promo_code:
+        discount_info = await validate_promo_code(db, data.promo_code, data.plan_id)
+        if not discount_info["valid"]:
+            raise HTTPException(status_code=400, detail=discount_info.get("error", "Code promo invalide"))
+    
+    # Apply discount
+    final_amount = await apply_promo_discount(base_amount, discount_info)
+    discount_applied = base_amount - final_amount
+    
+    # Get origin URL from request
+    origin_url = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    webhook_url = f"{str(request.base_url).rstrip('/')}/api/webhook/stripe"
+    
+    try:
+        # Create Stripe checkout session
+        session = await create_checkout_session(
+            api_key=api_key,
+            webhook_url=webhook_url,
+            origin_url=origin_url,
+            user_id=user["id"],
+            user_email=user["email"],
+            plan_id=data.plan_id,
+            billing_period=data.billing_period,
+            amount=final_amount,
+            currency=currency,
+            promo_code=data.promo_code
+        )
+        
+        # Create payment transaction record BEFORE redirect
+        now = datetime.now(timezone.utc).isoformat()
+        transaction = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "user_email": user["email"],
+            "session_id": session.session_id,
+            "plan_id": data.plan_id,
+            "billing_period": data.billing_period,
+            "amount": final_amount,
+            "currency": currency,
+            "promo_code": data.promo_code,
+            "discount_applied": discount_applied,
+            "status": "pending",
+            "created_at": now,
+            "updated_at": now
+        }
+        await db.payment_transactions.insert_one(transaction)
+        
+        logger.info(f"Created checkout session {session.session_id} for user {user['id']}")
+        
+        return CheckoutResponse(
+            checkout_url=session.url,
+            session_id=session.session_id
+        )
+    
+    except Exception as e:
+        logger.error(f"Error creating checkout session: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la création du paiement")
+
+@api_router.get("/payments/status/{session_id}")
+async def check_payment_status(session_id: str, request: Request, user: dict = Depends(get_current_user)):
+    """Check the status of a payment session and update user plan if paid"""
+    if not STRIPE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Paiements non disponibles")
+    
+    api_key = os.environ.get("STRIPE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Stripe non configuré")
+    
+    webhook_url = f"{str(request.base_url).rstrip('/')}/api/webhook/stripe"
+    
+    # Get transaction record
+    transaction = await db.payment_transactions.find_one(
+        {"session_id": session_id, "user_id": user["id"]},
+        {"_id": 0}
+    )
+    
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction non trouvée")
+    
+    # If already processed, return status
+    if transaction["status"] == "paid":
+        return {"status": "paid", "message": "Paiement déjà traité"}
+    
+    try:
+        # Check with Stripe
+        status = await get_checkout_status(api_key, webhook_url, session_id)
+        
+        now = datetime.now(timezone.utc).isoformat()
+        
+        if status.payment_status == "paid":
+            # Update transaction
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"status": "paid", "updated_at": now}}
+            )
+            
+            # Update user plan
+            plan_id = transaction["plan_id"]
+            billing_period = transaction["billing_period"]
+            
+            # Calculate expiration
+            if billing_period == "yearly":
+                expires_at = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+            else:
+                expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+            
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {
+                    "plan": plan_id,
+                    "plan_expires_at": expires_at,
+                    "updated_at": now
+                }}
+            )
+            
+            # Increment promo code usage
+            if transaction.get("promo_code"):
+                await increment_promo_usage(db, transaction["promo_code"])
+            
+            logger.info(f"User {user['id']} upgraded to {plan_id}")
+            
+            return {
+                "status": "paid",
+                "plan": plan_id,
+                "expires_at": expires_at,
+                "message": f"Bienvenue dans le plan {SUBSCRIPTION_PLANS[plan_id]['name']}!"
+            }
+        
+        elif status.status == "expired":
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"status": "expired", "updated_at": now}}
+            )
+            return {"status": "expired", "message": "Session de paiement expirée"}
+        
+        else:
+            return {"status": "pending", "message": "Paiement en cours de traitement"}
+    
+    except Exception as e:
+        logger.error(f"Error checking payment status: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la vérification du paiement")
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhooks"""
+    if not STRIPE_AVAILABLE:
+        return {"status": "ignored"}
+    
+    api_key = os.environ.get("STRIPE_API_KEY")
+    webhook_url = f"{str(request.base_url).rstrip('/')}/api/webhook/stripe"
+    
+    body = await request.body()
+    signature = request.headers.get("Stripe-Signature", "")
+    
+    try:
+        event = await handle_stripe_webhook(api_key, webhook_url, body, signature)
+        logger.info(f"Webhook received: {event.event_type}")
+        
+        # Handle different event types
+        if event.event_type == "checkout.session.completed":
+            session_id = event.session_id
+            # Update transaction
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {
+                    "status": "paid",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+        
+        return {"status": "received"}
+    
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error"}
+
+@api_router.post("/payments/promo-codes", status_code=201)
+async def create_promo_code(
+    code: str = Body(...),
+    discount_percent: Optional[int] = Body(None),
+    discount_amount: Optional[float] = Body(None),
+    max_uses: int = Body(-1),
+    expires_at: Optional[str] = Body(None),
+    plan_restriction: Optional[str] = Body(None),
+    user: dict = Depends(get_current_user)
+):
+    """Create a promo code (admin only in production)"""
+    # In production, add admin check here
+    
+    now = datetime.now(timezone.utc).isoformat()
+    promo_doc = {
+        "id": str(uuid.uuid4()),
+        "code": code.upper(),
+        "discount_percent": discount_percent,
+        "discount_amount": discount_amount,
+        "max_uses": max_uses,
+        "uses": 0,
+        "expires_at": expires_at,
+        "plan_restriction": plan_restriction,
+        "created_by": user["id"],
+        "created_at": now
+    }
+    
+    try:
+        await db.promo_codes.insert_one(promo_doc)
+        return {"message": "Code promo créé", "code": code.upper()}
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Ce code existe déjà")
+        raise HTTPException(status_code=500, detail="Erreur lors de la création")
+
+@api_router.post("/payments/validate-promo")
+async def validate_promo(
+    code: str = Body(...),
+    plan_id: str = Body(...),
+    user: dict = Depends(get_current_user)
+):
+    """Validate a promo code before checkout"""
+    result = await validate_promo_code(db, code, plan_id)
+    
+    if not result["valid"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Code invalide"))
+    
+    # Calculate discount preview
+    base_amount, currency = get_plan_price(plan_id, "monthly")
+    final_amount = await apply_promo_discount(base_amount, result)
+    
+    return {
+        "valid": True,
+        "discount_percent": result.get("discount_percent", 0),
+        "discount_amount": result.get("discount_amount", 0),
+        "original_price": base_amount,
+        "final_price": final_amount,
+        "currency": currency
+    }
+
 # ===================== DOSSIER ROUTES =====================
 
 @api_router.post("/dossiers", response_model=DossierResponse)

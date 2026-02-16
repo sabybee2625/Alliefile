@@ -75,14 +75,34 @@ const Dashboard = () => {
     }
   };
 
+  const fetchUserStats = async () => {
+    try {
+      const res = await userApi.getStats();
+      setUserStats(res.data);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
   useEffect(() => {
     fetchDossiers();
+    fetchUserStats();
   }, []);
 
   const handleCreate = async () => {
     if (!newTitle.trim()) {
       toast.error('Veuillez saisir un titre');
       return;
+    }
+    
+    // Check plan limits
+    if (userStats?.plan_limits) {
+      const maxDossiers = userStats.plan_limits.max_dossiers;
+      if (maxDossiers !== -1 && dossiers.length >= maxDossiers) {
+        toast.error(`Limite atteinte (${maxDossiers} dossiers). Passez à un plan supérieur.`);
+        navigate('/pricing');
+        return;
+      }
     }
 
     setCreating(true);
@@ -93,8 +113,14 @@ const Dashboard = () => {
       setNewTitle('');
       setNewDescription('');
       fetchDossiers();
+      fetchUserStats();
     } catch (error) {
-      toast.error('Erreur lors de la création du dossier');
+      if (error.response?.status === 403) {
+        toast.error('Limite de plan atteinte. Passez à un plan supérieur.');
+        navigate('/pricing');
+      } else {
+        toast.error('Erreur lors de la création du dossier');
+      }
     } finally {
       setCreating(false);
     }

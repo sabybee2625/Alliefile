@@ -334,6 +334,11 @@ async def register(data: UserCreate, request: Request):
         "email": data.email,
         "name": data.name,
         "password_hash": hash_password(data.password),
+        "plan": "free",
+        "plan_expires_at": None,
+        "stripe_customer_id": None,
+        "assistant_uses_today": 0,
+        "assistant_last_reset": now,
         "created_at": now
     }
     await db.users.insert_one(user_doc)
@@ -341,11 +346,15 @@ async def register(data: UserCreate, request: Request):
     token = create_token(user_id)
     return TokenResponse(
         access_token=token,
-        user=UserResponse(id=user_id, email=data.email, name=data.name, created_at=now)
+        user=UserResponse(id=user_id, email=data.email, name=data.name, plan="free", created_at=now)
     )
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(data: UserLogin):
+async def login(data: UserLogin, request: Request):
+    # Rate limiting
+    client_ip = get_client_ip(request)
+    await check_rate_limit_login(request, client_ip)
+    
     user = await db.users.find_one({"email": data.email}, {"_id": 0})
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -353,17 +362,110 @@ async def login(data: UserLogin):
     token = create_token(user["id"])
     return TokenResponse(
         access_token=token,
-        user=UserResponse(id=user["id"], email=user["email"], name=user["name"], created_at=user["created_at"])
+        user=UserResponse(
+            id=user["id"], 
+            email=user["email"], 
+            name=user["name"], 
+            plan=user.get("plan", "free"),
+            plan_expires_at=user.get("plan_expires_at"),
+            created_at=user["created_at"]
+        )
     )
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(user: dict = Depends(get_current_user)):
-    return UserResponse(id=user["id"], email=user["email"], name=user["name"], created_at=user["created_at"])
+    return UserResponse(
+        id=user["id"], 
+        email=user["email"], 
+        name=user["name"], 
+        plan=user.get("plan", "free"),
+        plan_expires_at=user.get("plan_expires_at"),
+        created_at=user["created_at"]
+    )
+
+@api_router.get("/auth/stats", response_model=UserStats)
+async def get_user_stats(user: dict = Depends(get_current_user)):
+    """Get user statistics and plan usage for dashboard"""
+    user_id = user["id"]
+    plan = await get_user_plan(user)
+    limits = get_plan_limits(plan)
+    
+    # Count dossiers
+    total_dossiers = await db.dossiers.count_documents({"user_id": user_id})
+    
+    # Count pieces
+    pipeline = [
+        {"$match": {"dossier_id": {"$in": [d["id"] async for d in db.dossiers.find({"user_id": user_id}, {"id": 1})]}}},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": 1},
+            "ready": {"$sum": {"$cond": [{"$eq": ["$status", "pret"]}, 1, 0]}},
+            "to_verify": {"$sum": {"$cond": [{"$eq": ["$status", "a_verifier"]}, 1, 0]}},
+            "total_size": {"$sum": "$file_size"}
+        }}
+    ]
+    
+    # Get dossier IDs first
+    dossier_ids = [d["id"] async for d in db.dossiers.find({"user_id": user_id}, {"id": 1})]
+    
+    pieces_stats = await db.pieces.aggregate([
+        {"$match": {"dossier_id": {"$in": dossier_ids}}},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": 1},
+            "ready": {"$sum": {"$cond": [{"$eq": ["$status", "pret"]}, 1, 0]}},
+            "to_verify": {"$sum": {"$cond": [{"$eq": ["$status", "a_verifier"]}, 1, 0]}},
+            "total_size": {"$sum": "$file_size"}
+        }}
+    ]).to_list(1)
+    
+    stats = pieces_stats[0] if pieces_stats else {"total": 0, "ready": 0, "to_verify": 0, "total_size": 0}
+    
+    # Pieces by type
+    type_pipeline = [
+        {"$match": {"dossier_id": {"$in": dossier_ids}}},
+        {"$group": {"_id": "$file_type", "count": {"$sum": 1}}}
+    ]
+    type_results = await db.pieces.aggregate(type_pipeline).to_list(100)
+    pieces_by_type = {r["_id"]: r["count"] for r in type_results if r["_id"]}
+    
+    # Active share links
+    now = datetime.now(timezone.utc).isoformat()
+    active_links = await db.share_links.count_documents({
+        "dossier_id": {"$in": dossier_ids},
+        "expires_at": {"$gt": now},
+        "revoked": {"$ne": True}
+    })
+    
+    # Assistant uses today
+    assistant_uses = user.get("assistant_uses_today", 0)
+    last_reset = user.get("assistant_last_reset")
+    if last_reset:
+        last_reset_date = datetime.fromisoformat(last_reset).date()
+        if last_reset_date < datetime.now(timezone.utc).date():
+            assistant_uses = 0
+    
+    return UserStats(
+        total_dossiers=total_dossiers,
+        total_pieces=stats["total"],
+        pieces_ready=stats["ready"],
+        pieces_to_verify=stats["to_verify"],
+        pieces_by_type=pieces_by_type,
+        active_share_links=active_links,
+        storage_used_mb=stats["total_size"] / (1024 * 1024),
+        plan=plan,
+        plan_limits=limits.dict(),
+        assistant_uses_today=assistant_uses
+    )
 
 # ===================== DOSSIER ROUTES =====================
 
 @api_router.post("/dossiers", response_model=DossierResponse)
 async def create_dossier(data: DossierCreate, user: dict = Depends(get_current_user)):
+    # Check plan limits
+    current_count = await db.dossiers.count_documents({"user_id": user["id"]})
+    await check_plan_limit(user, "max_dossiers", current_count)
+    
     dossier_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     dossier_doc = {

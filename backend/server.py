@@ -281,15 +281,37 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 async def get_user_plan(user: dict) -> str:
     """Get user's current plan, checking expiration"""
     plan = user.get("plan", "free")
-    expires_at = user.get("plan_expires_at")
+    expires_at = user.get("plan_expires_at") or user.get("current_period_end")
+    plan_status = user.get("plan_status", "active" if plan != "free" else None)
     
     if plan != "free" and expires_at:
         if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
             # Plan expired, revert to free
             await db.users.update_one(
                 {"id": user["id"]},
-                {"$set": {"plan": "free", "plan_expires_at": None}}
+                {"$set": {
+                    "plan": "free",
+                    "plan_status": "expired",
+                    "plan_expires_at": None,
+                    "current_period_end": None
+                }}
             )
+            logger.info(f"User {user['id']} plan expired, reverted to free")
+            return "free"
+    
+    # Handle canceled subscriptions that reach end of period
+    if plan_status == "canceled" and expires_at:
+        if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {
+                    "plan": "free",
+                    "plan_status": "expired",
+                    "plan_expires_at": None,
+                    "current_period_end": None
+                }}
+            )
+            logger.info(f"User {user['id']} canceled plan ended, reverted to free")
             return "free"
     
     return plan

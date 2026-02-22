@@ -623,17 +623,19 @@ async def check_payment_status(session_id: str, request: Request, user: dict = D
             plan_id = transaction["plan_id"]
             billing_period = transaction["billing_period"]
             
-            # Calculate expiration
+            # Calculate expiration (current_period_end)
             if billing_period == "yearly":
-                expires_at = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+                current_period_end = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
             else:
-                expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+                current_period_end = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
             
             await db.users.update_one(
                 {"id": user["id"]},
                 {"$set": {
                     "plan": plan_id,
-                    "plan_expires_at": expires_at,
+                    "plan_status": "active",
+                    "plan_expires_at": current_period_end,
+                    "current_period_end": current_period_end,
                     "updated_at": now
                 }}
             )
@@ -647,7 +649,8 @@ async def check_payment_status(session_id: str, request: Request, user: dict = D
             return {
                 "status": "paid",
                 "plan": plan_id,
-                "expires_at": expires_at,
+                "plan_status": "active",
+                "current_period_end": current_period_end,
                 "message": f"Bienvenue dans le plan {SUBSCRIPTION_PLANS[plan_id]['name']}!"
             }
         

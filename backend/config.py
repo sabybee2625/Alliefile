@@ -134,14 +134,14 @@ class PlanLimits(BaseModel):
 PLAN_LIMITS = {
     "free": PlanLimits(
         max_dossiers=1,
-        max_pieces_per_dossier=20,
-        max_total_pieces=20,
+        max_pieces_per_dossier=15,
+        max_total_pieces=15,
         max_share_links=3,
         assistant_daily_limit=1,
         can_export_docx=False,
         can_export_pdf=True,
         can_advanced_share=False,
-        can_use_assistant=True,
+        can_use_assistant=True,  # Only expose_faits allowed
         storage_mb=100
     ),
     "standard": PlanLimits(

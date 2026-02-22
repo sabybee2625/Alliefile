@@ -1905,6 +1905,38 @@ async def generate_document(dossier_id: str, request: AssistantRequest, user: di
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
+    # Check plan restrictions for assistant
+    plan = await get_user_plan(user)
+    limits = get_plan_limits(plan)
+    
+    # FREE plan: only expose_faits allowed
+    if plan == "free" and request.document_type != "expose_faits":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "PLAN_LIMIT_EXCEEDED",
+                "message": "Le plan GRATUIT permet uniquement la génération d'exposé des faits. Passez à un plan supérieur pour accéder aux autres types de documents.",
+                "plan": plan,
+                "allowed_types": ["expose_faits"],
+                "upgrade_url": "/pricing"
+            }
+        )
+    
+    # Check daily usage limit
+    assistant_uses = user.get("assistant_uses_today", 0)
+    last_reset = user.get("assistant_last_reset")
+    if last_reset:
+        last_reset_date = datetime.fromisoformat(last_reset).date()
+        if last_reset_date < datetime.now(timezone.utc).date():
+            assistant_uses = 0
+            # Reset the counter
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"assistant_uses_today": 0, "assistant_last_reset": datetime.now(timezone.utc).isoformat()}}
+            )
+    
+    await check_plan_limit(user, "assistant_daily_limit", assistant_uses)
+    
     # Get validated pieces only
     query = {"dossier_id": dossier_id, "status": "pret"}
     if request.piece_ids:

@@ -2075,6 +2075,12 @@ Rédige le projet de requête pour la juridiction {jurisdiction_label}:"""
         
         response = await chat.send_message(UserMessage(text=prompt))
         
+        # Increment assistant usage counter
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$inc": {"assistant_uses_today": 1}}
+        )
+        
         warnings = []
         if "À confirmer" in response:
             warnings.append("Certaines informations nécessitent confirmation (marquées 'À confirmer').")

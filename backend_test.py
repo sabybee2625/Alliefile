@@ -13,7 +13,7 @@ from pathlib import Path
 import tempfile
 
 class LegalDocumentAPITester:
-    def __init__(self, base_url="https://smartdocs-103.preview.emergentagent.com"):
+    def __init__(self, base_url="https://justice-hub-45.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0

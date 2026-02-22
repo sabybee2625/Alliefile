@@ -931,6 +931,15 @@ async def upload_piece(
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
+    # Check plan limits for total pieces
+    dossier_ids = [d["id"] async for d in db.dossiers.find({"user_id": user["id"]}, {"id": 1})]
+    total_pieces = await db.pieces.count_documents({"dossier_id": {"$in": dossier_ids}})
+    await check_plan_limit(user, "max_total_pieces", total_pieces)
+    
+    # Check plan limits for pieces in this dossier
+    dossier_pieces = await db.pieces.count_documents({"dossier_id": dossier_id})
+    await check_plan_limit(user, "max_pieces_per_dossier", dossier_pieces)
+    
     # Read file content ONCE and store in memory
     content = await file.read()
     file_size = len(content)

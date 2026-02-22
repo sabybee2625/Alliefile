@@ -2200,7 +2200,11 @@ async def get_shared_dossier(token: str):
 async def get_shared_piece_file(token: str, piece_id: str):
     link = await db.share_links.find_one({"token": token}, {"_id": 0})
     if not link:
-        raise HTTPException(status_code=404, detail="Link not found")
+        raise HTTPException(status_code=404, detail="Lien non trouvé")
+    
+    # Check if revoked
+    if link.get("revoked"):
+        raise HTTPException(status_code=410, detail="Ce lien a été révoqué par son propriétaire")
     
     expires = datetime.fromisoformat(link["expires_at"])
     if datetime.now(timezone.utc) > expires:

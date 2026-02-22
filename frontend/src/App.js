@@ -77,6 +77,10 @@ function AppRoutes() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/subscription/success" element={<PricingPage />} />
       <Route path="/subscription/cancel" element={<PricingPage />} />
+      
+      {/* Legal pages (public) */}
+      <Route path="/cgu" element={<CGU />} />
+      <Route path="/privacy" element={<Privacy />} />
 
       {/* Protected routes */}
       <Route

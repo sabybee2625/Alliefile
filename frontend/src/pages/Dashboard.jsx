@@ -389,6 +389,16 @@ const Dashboard = () => {
             ))}
           </div>
         )}
+
+        {/* Disclaimer */}
+        <Disclaimer className="mt-6" />
+        
+        {/* Legal Footer */}
+        <div className="flex flex-wrap gap-4 text-sm text-slate-500 mt-8 pt-4 border-t border-slate-200">
+          <Link to="/cgu" className="hover:text-slate-900">Conditions Générales</Link>
+          <Link to="/privacy" className="hover:text-slate-900">Politique de Confidentialité</Link>
+          <Link to="/pricing" className="hover:text-slate-900">Tarifs</Link>
+        </div>
       </div>
 
       {/* Delete Confirmation */}

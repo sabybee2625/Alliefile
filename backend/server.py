@@ -2288,6 +2288,108 @@ async def get_shared_chronology_pdf(token: str):
 
 # ===================== ROOT ROUTES =====================
 
+# ===================== ACCOUNT DELETION =====================
+
+@api_router.delete("/account")
+async def delete_account(user: dict = Depends(get_current_user)):
+    """
+    Permanently delete user account and ALL associated data.
+    This action is IRREVERSIBLE.
+    """
+    user_id = user["id"]
+    
+    # Get all user's dossiers
+    dossiers = await db.dossiers.find({"user_id": user_id}).to_list(1000)
+    dossier_ids = [d["id"] for d in dossiers]
+    
+    # Delete all files for all pieces
+    pieces = await db.pieces.find({"dossier_id": {"$in": dossier_ids}}).to_list(10000)
+    files_deleted = 0
+    for piece in pieces:
+        filepath = config.UPLOAD_DIR / piece["filename"]
+        if filepath.exists():
+            filepath.unlink()
+            files_deleted += 1
+    
+    # Delete all pieces
+    pieces_result = await db.pieces.delete_many({"dossier_id": {"$in": dossier_ids}})
+    
+    # Delete all share links
+    links_result = await db.share_links.delete_many({"dossier_id": {"$in": dossier_ids}})
+    
+    # Delete all dossiers
+    dossiers_result = await db.dossiers.delete_many({"user_id": user_id})
+    
+    # Delete payment transactions
+    payments_result = await db.payment_transactions.delete_many({"user_id": user_id})
+    
+    # Finally, delete the user
+    await db.users.delete_one({"id": user_id})
+    
+    logger.info(f"Account deleted: user={user_id}, dossiers={dossiers_result.deleted_count}, pieces={pieces_result.deleted_count}, files={files_deleted}")
+    
+    return {
+        "message": "Compte supprimé définitivement",
+        "deleted": {
+            "dossiers": dossiers_result.deleted_count,
+            "pieces": pieces_result.deleted_count,
+            "files": files_deleted,
+            "share_links": links_result.deleted_count,
+            "payment_transactions": payments_result.deleted_count
+        }
+    }
+
+
+# ===================== SHARE LINK MANAGEMENT =====================
+
+@api_router.get("/dossiers/{dossier_id}/share-links")
+async def list_share_links(dossier_id: str, user: dict = Depends(get_current_user)):
+    """List all share links for a dossier"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    links = await db.share_links.find({"dossier_id": dossier_id}, {"_id": 0}).to_list(100)
+    
+    now = datetime.now(timezone.utc)
+    result = []
+    for link in links:
+        expires = datetime.fromisoformat(link["expires_at"])
+        result.append({
+            **link,
+            "is_expired": now > expires,
+            "is_revoked": link.get("revoked", False),
+            "is_active": not link.get("revoked", False) and now <= expires
+        })
+    
+    return result
+
+
+@api_router.delete("/share-links/{link_id}")
+async def revoke_share_link(link_id: str, user: dict = Depends(get_current_user)):
+    """Revoke a share link (cannot be undone)"""
+    # Find the link
+    link = await db.share_links.find_one({"id": link_id}, {"_id": 0})
+    if not link:
+        raise HTTPException(status_code=404, detail="Lien non trouvé")
+    
+    # Verify ownership
+    dossier = await db.dossiers.find_one({"id": link["dossier_id"], "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    
+    # Mark as revoked
+    await db.share_links.update_one(
+        {"id": link_id},
+        {"$set": {
+            "revoked": True,
+            "revoked_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {"message": "Lien de partage révoqué"}
+
+
 @api_router.get("/")
 async def root():
     return {

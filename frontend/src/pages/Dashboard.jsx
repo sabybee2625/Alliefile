@@ -20,6 +20,7 @@ import { dossiersApi, userApi } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { Disclaimer } from './Legal';
 import {
   Plus,
   FolderOpen,
@@ -33,6 +34,7 @@ import {
   TrendingUp,
   HardDrive,
   Share2,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DropdownMenu,

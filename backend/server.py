@@ -307,10 +307,28 @@ async def check_plan_limit(user: dict, limit_type: str, current_count: int = 0) 
     if limit_value == -1:  # Unlimited
         return True
     
+    # Map limit types to French labels
+    limit_labels = {
+        "max_dossiers": f"nombre de dossiers ({limit_value} max)",
+        "max_total_pieces": f"nombre total de pièces ({limit_value} max)",
+        "max_pieces_per_dossier": f"pièces par dossier ({limit_value} max)",
+        "max_share_links": f"liens de partage ({limit_value} max)",
+        "assistant_daily_limit": f"utilisations de l'assistant par jour ({limit_value} max)"
+    }
+    
     if current_count >= limit_value:
+        label = limit_labels.get(limit_type, limit_type)
         raise HTTPException(
             status_code=403,
-            detail=f"Limite du plan {plan} atteinte pour {limit_type}. Passez à un plan supérieur."
+            detail={
+                "error": "PLAN_LIMIT_EXCEEDED",
+                "message": f"Limite du plan {plan.upper()} atteinte : {label}. Passez à un plan supérieur pour continuer.",
+                "plan": plan,
+                "limit_type": limit_type,
+                "current": current_count,
+                "max": limit_value,
+                "upgrade_url": "/pricing"
+            }
         )
     
     return True

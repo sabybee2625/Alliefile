@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import DossierView from './pages/DossierView';
 import SharedDossier from './pages/SharedDossier';
 import PricingPage from './pages/Pricing';
+import { CGU, Privacy } from './pages/Legal';
 import './App.css';
 
 // Protected route wrapper

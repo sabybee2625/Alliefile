@@ -54,7 +54,7 @@ db = client[config.DB_NAME]
 app = FastAPI(
     title="Dossier Juridique Intelligent",
     description="SaaS sécurisé pour la gestion de dossiers juridiques",
-    version="2.0.0",
+    version="1.0.0",
     docs_url="/api/docs" if config.DEBUG else None,  # Disable docs in production
     redoc_url="/api/redoc" if config.DEBUG else None,
 )
@@ -2403,7 +2403,7 @@ async def revoke_share_link(link_id: str, user: dict = Depends(get_current_user)
 async def root():
     return {
         "message": "Dossier Juridique Intelligent API", 
-        "version": "3.0.0",
+        "version": "1.0.0",
         "environment": config.ENV.value
     }
 

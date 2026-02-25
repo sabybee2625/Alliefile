@@ -1385,6 +1385,9 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
                 "analysis_completed_at": datetime.now(timezone.utc).isoformat()
             }}
         )
+    finally:
+        # Clean up lock to prevent memory leak
+        analysis_locks.pop(lock_key, None)
     
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
     return PieceResponse(**piece)

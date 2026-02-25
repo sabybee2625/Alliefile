@@ -2443,6 +2443,10 @@ app.add_middleware(
 async def startup_db_indexes():
     """Create indexes for performance and security"""
     try:
+        # Test MongoDB connection
+        await client.admin.command('ping')
+        logger.info("MongoDB connected")
+        
         # User indexes
         await db.users.create_index("email", unique=True, name="idx_user_email")
         

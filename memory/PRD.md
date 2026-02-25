@@ -34,6 +34,12 @@ Plateforme SaaS juridique pour la constitution, la structuration, le partage et 
 - [x] Révocation via `DELETE /api/share-links/{id}`
 - [x] Endpoint `GET /api/dossiers/{id}/share-links` pour lister
 
+### 6. Fix "Analyser tout" (v1.0.1)
+- [x] `handleAnalyzeAll` passe maintenant `piece_ids` à l'API
+- [x] Support mode sélection (si sélection active → analyse la sélection)
+- [x] Compteur bouton affiche les pièces **éligibles** (pas queued/analyzing)
+- [x] Toast explicite si aucune pièce éligible
+
 ---
 
 ## Architecture

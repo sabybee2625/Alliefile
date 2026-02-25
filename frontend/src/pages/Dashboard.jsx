@@ -53,6 +53,50 @@ import {
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
 
+// Beta Code Section Component
+const BetaCodeSection = ({ onActivated }) => {
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleActivate = async () => {
+    if (!code.trim()) return;
+    setLoading(true);
+    try {
+      await userApi.activateBetaCode(code.trim());
+      toast.success('Code activé ! Vous avez maintenant un accès Premium.');
+      setCode('');
+      onActivated();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Code invalide');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+      <p className="text-sm font-medium text-slate-700 mb-2">Code d'accès (association/test)</p>
+      <div className="flex gap-2">
+        <Input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="Entrez votre code"
+          className="flex-1 h-9"
+          onKeyDown={(e) => e.key === 'Enter' && handleActivate()}
+        />
+        <Button 
+          onClick={handleActivate} 
+          disabled={loading || !code.trim()}
+          size="sm"
+          className="h-9"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Activer'}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();

@@ -2413,6 +2413,35 @@ async def revoke_share_link(link_id: str, user: dict = Depends(get_current_user)
     return {"message": "Lien de partage révoqué"}
 
 
+# ===================== BETA ACCESS =====================
+
+class BetaActivateRequest(BaseModel):
+    code: str
+
+@api_router.post("/beta/activate")
+async def activate_beta_code(data: BetaActivateRequest, user: dict = Depends(get_current_user)):
+    """Activate premium access with beta code (for associations/testers)"""
+    beta_code = os.environ.get("BETA_ACCESS_CODE", "")
+    
+    if not beta_code or data.code != beta_code:
+        raise HTTPException(status_code=403, detail="Code invalide")
+    
+    # Update user to premium
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "plan": "premium",
+            "plan_status": "active",
+            "plan_source": "beta_code",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    logger.info(f"Beta code activated for user {user['id']}")
+    
+    return {"activated": True, "plan": "premium"}
+
+
 @api_router.get("/")
 async def root():
     return {

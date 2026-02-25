@@ -46,8 +46,9 @@ from security import (
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage
 
-# MongoDB connection
-client = AsyncIOMotorClient(config.MONGO_URL)
+# MongoDB connection with SSL certificate handling
+import certifi
+client = AsyncIOMotorClient(config.MONGO_URL, tlsCAFile=certifi.where())
 db = client[config.DB_NAME]
 
 # Create the main app with production settings

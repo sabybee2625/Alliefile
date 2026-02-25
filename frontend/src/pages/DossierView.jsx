@@ -536,7 +536,17 @@ const DossierView = () => {
   const readyCount = pieces.filter((p) => p.status === 'pret').length;
   const errorCount = pieces.filter((p) => p.analysis_status === 'error').length;
   const duplicateCount = pieces.filter((p) => p.is_duplicate).length;
-  const pendingAnalysis = pieces.filter((p) => p.analysis_status === 'pending' || p.analysis_status === 'queued').length;
+  
+  // Count pieces actually eligible for analysis (not queued, not analyzing, not complete)
+  const eligibleForAnalysis = pieces.filter((p) => {
+    const status = p.analysis_status;
+    return !status || status === 'pending' || status === 'error';
+  }).length;
+  
+  // Count pieces currently in queue or analyzing (for info display)
+  const inQueueOrAnalyzing = pieces.filter((p) => 
+    p.analysis_status === 'queued' || p.analysis_status === 'analyzing'
+  ).length;
 
   return (
     <Layout>

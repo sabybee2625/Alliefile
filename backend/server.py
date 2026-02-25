@@ -46,9 +46,14 @@ from security import (
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage
 
-# MongoDB connection with SSL certificate handling
+# MongoDB connection with SSL certificate handling for Atlas
 import certifi
-client = AsyncIOMotorClient(config.MONGO_URL, tlsCAFile=certifi.where())
+
+# Use certifi only for Atlas connections (mongodb+srv)
+if config.MONGO_URL.startswith("mongodb+srv"):
+    client = AsyncIOMotorClient(config.MONGO_URL, tlsCAFile=certifi.where())
+else:
+    client = AsyncIOMotorClient(config.MONGO_URL)
 db = client[config.DB_NAME]
 
 # Create the main app with production settings

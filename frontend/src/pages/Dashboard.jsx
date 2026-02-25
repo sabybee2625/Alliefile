@@ -225,6 +225,11 @@ const Dashboard = () => {
           </Card>
         )}
 
+        {/* Beta Access Code */}
+        {userStats && userStats.plan === 'free' && (
+          <BetaCodeSection onActivated={fetchUserStats} />
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

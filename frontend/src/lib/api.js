@@ -153,6 +153,7 @@ export const userApi = {
   checkPaymentStatus: (sessionId) => api.get(`/payments/status/${sessionId}`),
   validatePromoCode: (code, planId) => 
     api.post('/payments/validate-promo', { code, plan_id: planId }),
+  activateBetaCode: (code) => api.post('/beta/activate', { code }),
 };
 
 export default api;

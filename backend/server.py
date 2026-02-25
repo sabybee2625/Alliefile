@@ -2311,13 +2311,12 @@ async def delete_account(user: dict = Depends(get_current_user)):
     dossiers = await db.dossiers.find({"user_id": user_id}).to_list(1000)
     dossier_ids = [d["id"] for d in dossiers]
     
-    # Delete all files for all pieces
+    # Delete all files for all pieces using storage abstraction
     pieces = await db.pieces.find({"dossier_id": {"$in": dossier_ids}}).to_list(10000)
     files_deleted = 0
     for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        deleted = await storage.delete_file(piece["filename"])
+        if deleted:
             files_deleted += 1
     
     # Delete all pieces

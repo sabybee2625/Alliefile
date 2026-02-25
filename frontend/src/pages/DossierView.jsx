@@ -850,7 +850,7 @@ const DossierView = () => {
                 
                 <div className="flex items-center gap-2">
                   {/* Analyze All Button */}
-                  {pendingAnalysis > 0 && (
+                  {eligibleForAnalysis > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -859,10 +859,14 @@ const DossierView = () => {
                       data-testid="analyze-all-btn"
                     >
                       <PlayCircle className="w-4 h-4 mr-1" />
-                      Analyser tout ({pendingAnalysis})
+                      Analyser {selectMode && selectedPieces.length > 0 ? `(${selectedPieces.length} sélectionnées)` : `tout (${eligibleForAnalysis})`}
                     </Button>
                   )}
-                  
+                  {inQueueOrAnalyzing > 0 && (
+                    <span className="text-xs text-slate-500">
+                      {inQueueOrAnalyzing} en cours...
+                    </span>
+                  )}
                   {/* Retry Failed Button */}
                   {errorCount > 0 && (
                     <Button

@@ -91,6 +91,10 @@ if config.IS_PRODUCTION:
 # Analysis queue lock (simple in-memory for now)
 analysis_locks = {}
 
+# Analysis rate limiting constants
+MAX_CONCURRENT_ANALYSES = config.MAX_CONCURRENT_ANALYSES
+ANALYSIS_RATE_LIMIT_SECONDS = 2  # Minimum seconds between analyses
+
 # ===================== MODELS =====================
 
 class UserCreate(BaseModel):

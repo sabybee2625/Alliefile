@@ -313,16 +313,30 @@ const DossierView = () => {
 
   const handleAnalyzeAll = async () => {
     try {
-      const pendingPieces = pieces.filter(p => 
-        p.analysis_status === 'pending' || p.analysis_status === 'error'
-      );
+      // Determine source of pieces to analyze
+      let sourcePieces;
+      if (selectMode && selectedPieces.length > 0) {
+        // Use selected pieces
+        sourcePieces = pieces.filter(p => selectedPieces.includes(p.id));
+      } else {
+        // Use filtered pieces (or all if no filter)
+        sourcePieces = filteredPieces.length > 0 ? filteredPieces : pieces;
+      }
       
-      if (pendingPieces.length === 0) {
-        toast.info('Aucune pièce à analyser');
+      // Filter eligible pieces: pending, error, or null/undefined (not queued, analyzing, complete)
+      const eligiblePieces = sourcePieces.filter(p => {
+        const status = p.analysis_status;
+        return !status || status === 'pending' || status === 'error';
+      });
+      
+      if (eligiblePieces.length === 0) {
+        toast.info('Aucune pièce éligible (déjà analysées ou en cours)');
         return;
       }
       
-      const res = await dossiersApi.queueAnalysis(id);
+      // Build pieceIds array and call API with it
+      const pieceIdsToQueue = eligiblePieces.map(p => p.id);
+      const res = await dossiersApi.queueAnalysis(id, pieceIdsToQueue);
       toast.success(res.data.message);
       
       // Start processing

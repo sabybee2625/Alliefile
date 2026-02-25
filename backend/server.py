@@ -201,7 +201,6 @@ class PieceResponse(BaseModel):
     updated_at: str
 
 class ShareLinkCreate(BaseModel):
-    dossier_id: str
     expires_in_days: int = 7
 
 class ShareLinkResponse(BaseModel):

@@ -2463,6 +2463,11 @@ async def health():
 # Include router
 app.include_router(api_router)
 
+# Root-level health check for deployment systems (outside /api prefix)
+@app.get("/health")
+async def root_health():
+    return {"status": "healthy"}
+
 # Security middlewares (order matters - added last = executed first)
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(ErrorHandlingMiddleware)

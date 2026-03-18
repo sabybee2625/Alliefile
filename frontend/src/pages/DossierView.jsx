@@ -241,6 +241,8 @@ const DossierView = () => {
   const handleUpload = async (files, forceUpload = false) => {
     setUploading(true);
     let uploaded = 0;
+    let skippedDuplicates = 0;
+    let errors = [];
     
     try {
       for (const file of files) {
@@ -249,27 +251,31 @@ const DossierView = () => {
           uploaded++;
         } catch (error) {
           if (error.response?.status === 409) {
-            // Show duplicate modal with details
-            const info = error.duplicateInfo || {
-              existingPieceNumero: '?',
-              existingFilename: file.name,
-              message: 'Fichier identique déjà présent'
-            };
-            setDuplicateInfo(info);
-            setDuplicatePendingFile(file);
-            setDuplicateModalOpen(true);
-            setUploading(false);
-            return; // Stop processing, wait for user decision
+            // Duplicate detected - skip and continue with other files
+            skippedDuplicates++;
+            continue;
           } else if (error.response?.status === 400) {
-            toast.error(`Fichier invalide: ${file.name} (${error.response?.data?.detail || 'erreur'})`);
+            errors.push(`${file.name}: ${error.response?.data?.detail || 'fichier invalide'}`);
+            continue;
+          } else if (error.response?.status === 403) {
+            // Plan limit reached
+            toast.error(error.response?.data?.detail?.message || 'Limite du plan atteinte');
+            break;
           } else {
             throw error;
           }
         }
       }
       
+      // Show summary
       if (uploaded > 0) {
-        toast.success(`${uploaded} fichier${uploaded > 1 ? 's' : ''} uploadé${uploaded > 1 ? 's' : ''}`);
+        toast.success(`${uploaded} fichier${uploaded > 1 ? 's' : ''} importé${uploaded > 1 ? 's' : ''}`);
+      }
+      if (skippedDuplicates > 0) {
+        toast.info(`${skippedDuplicates} doublon${skippedDuplicates > 1 ? 's' : ''} ignoré${skippedDuplicates > 1 ? 's' : ''}`);
+      }
+      if (errors.length > 0) {
+        errors.forEach(err => toast.error(err));
       }
       
       setUploadOpen(false);

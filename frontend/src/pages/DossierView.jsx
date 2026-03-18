@@ -62,6 +62,8 @@ import {
   Image,
   FileQuestion,
   X,
+  Tag,
+  ChevronDown,
 } from 'lucide-react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { PieceValidationModal } from '../components/PieceValidationModal';

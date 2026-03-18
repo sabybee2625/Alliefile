@@ -447,8 +447,42 @@ const Dashboard = () => {
           <Link to="/cgu" className="hover:text-slate-900">Conditions Générales</Link>
           <Link to="/privacy" className="hover:text-slate-900">Politique de Confidentialité</Link>
           <Link to="/pricing" className="hover:text-slate-900">Tarifs</Link>
+          <button
+            onClick={() => setDeleteAccountOpen(true)}
+            className="text-red-500 hover:text-red-700"
+          >
+            Supprimer mon compte
+          </button>
         </div>
       </div>
+
+      {/* Delete Account Confirmation */}
+      <AlertDialog open={deleteAccountOpen} onOpenChange={setDeleteAccountOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600">Supprimer définitivement votre compte ?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>Cette action est <strong>irréversible</strong>. Seront supprimés :</p>
+              <ul className="list-disc pl-4 text-sm">
+                <li>Tous vos dossiers et pièces</li>
+                <li>Tous vos fichiers uploadés</li>
+                <li>Tous vos liens de partage</li>
+                <li>Votre compte et vos données personnelles</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-sm">Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAccount}
+              disabled={deletingAccount}
+              className="bg-red-600 hover:bg-red-700 rounded-sm"
+            >
+              {deletingAccount ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Supprimer mon compte'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

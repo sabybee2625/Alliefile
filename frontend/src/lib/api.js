@@ -154,6 +154,7 @@ export const userApi = {
   validatePromoCode: (code, planId) => 
     api.post('/payments/validate-promo', { code, plan_id: planId }),
   activateBetaCode: (code) => api.post('/beta/activate', { code }),
+  deleteAccount: () => api.delete('/account'),
 };
 
 export default api;

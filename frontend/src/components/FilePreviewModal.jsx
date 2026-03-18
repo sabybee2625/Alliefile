@@ -17,18 +17,25 @@ export const FilePreviewModal = ({ piece, onClose }) => {
 
   const fileType = piece.file_type;
   const canPreview = fileType === 'pdf' || fileType === 'image';
+  const isDocx = fileType === 'docx' || fileType === 'doc';
 
   useEffect(() => {
-    if (!canPreview) {
+    if (!canPreview && !isDocx) {
       setLoading(false);
       return;
     }
 
     const loadPreview = async () => {
       try {
-        const blob = await piecesApi.fetchFile(piece.id);
-        const url = URL.createObjectURL(blob);
-        setPreviewUrl(url);
+        if (isDocx) {
+          // For DOCX, we'll use the download URL with Office Online viewer
+          const fileUrl = await piecesApi.getFileUrl(piece.id);
+          setPreviewUrl(fileUrl);
+        } else {
+          const blob = await piecesApi.fetchFile(piece.id);
+          const url = URL.createObjectURL(blob);
+          setPreviewUrl(url);
+        }
       } catch (err) {
         console.error('Preview error:', err);
         setError('Impossible de charger la prévisualisation');
@@ -40,11 +47,11 @@ export const FilePreviewModal = ({ piece, onClose }) => {
     loadPreview();
 
     return () => {
-      if (previewUrl) {
+      if (previewUrl && !isDocx) {
         URL.revokeObjectURL(previewUrl);
       }
     };
-  }, [piece.id, canPreview]);
+  }, [piece.id, canPreview, isDocx]);
 
   const handleDownload = async () => {
     try {
@@ -61,6 +68,9 @@ export const FilePreviewModal = ({ piece, onClose }) => {
         return <FileText className="w-16 h-16 text-red-500" />;
       case 'image':
         return <Image className="w-16 h-16 text-blue-500" />;
+      case 'docx':
+      case 'doc':
+        return <FileText className="w-16 h-16 text-blue-600" />;
       default:
         return <FileQuestion className="w-16 h-16 text-slate-400" />;
     }
@@ -117,6 +127,22 @@ export const FilePreviewModal = ({ piece, onClose }) => {
                   />
                 </div>
               ) : null}
+            </div>
+          ) : isDocx ? (
+            <div className="flex flex-col items-center justify-center h-96 text-slate-500">
+              <FileText className="w-16 h-16 text-blue-600 mb-4" />
+              <p className="text-center mb-2">
+                Document Word ({piece.file_type.toUpperCase()})
+              </p>
+              <p className="text-sm text-slate-400 mb-4">
+                La prévisualisation des fichiers Word n'est pas disponible dans le navigateur.
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={handleDownload} className="rounded-sm">
+                  <Download className="w-4 h-4 mr-2" />
+                  Télécharger
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-96 text-slate-500">

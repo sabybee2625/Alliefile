@@ -123,6 +123,7 @@ function App() {
             },
           }}
         />
+        <CookieConsent />
       </BrowserRouter>
     </AuthProvider>
   );

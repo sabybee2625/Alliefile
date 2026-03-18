@@ -867,6 +867,30 @@ const DossierView = () => {
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  
+                  {/* Type Filter */}
+                  {availableTypes.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="rounded-sm">
+                          <Tag className="w-4 h-4 mr-1" />
+                          {typeFilter ? pieceTypeLabels[typeFilter] : 'Type'}
+                          <ChevronDown className="w-3 h-3 ml-1" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => setTypeFilter(null)}>
+                          Tous les types
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {availableTypes.map(type => (
+                          <DropdownMenuItem key={type} onClick={() => setTypeFilter(type)}>
+                            {pieceTypeLabels[type] || type}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-2">

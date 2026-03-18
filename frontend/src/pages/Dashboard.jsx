@@ -109,6 +109,8 @@ const Dashboard = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [userStats, setUserStats] = useState(null);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const fetchDossiers = async () => {
     try {

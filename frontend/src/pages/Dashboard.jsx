@@ -191,6 +191,21 @@ const Dashboard = () => {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    try {
+      await userApi.deleteAccount();
+      toast.success('Compte supprimé');
+      logout();
+      navigate('/login');
+    } catch (error) {
+      toast.error('Erreur lors de la suppression du compte');
+    } finally {
+      setDeletingAccount(false);
+      setDeleteAccountOpen(false);
+    }
+  };
+
   const getPlanBadgeColor = (plan) => {
     switch (plan) {
       case 'premium': return 'bg-amber-100 text-amber-700 border-amber-300';

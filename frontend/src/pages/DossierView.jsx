@@ -220,6 +220,12 @@ const DossierView = () => {
     if (statusFilter === 'pret' && piece.status !== 'pret') return false;
     if (statusFilter === 'error' && piece.analysis_status !== 'error') return false;
     
+    // Type filter
+    if (typeFilter) {
+      const pieceType = piece.validated_data?.type_piece || piece.ai_proposal?.type_piece;
+      if (pieceType !== typeFilter) return false;
+    }
+    
     // Other filters (duplicates, errors dropdown)
     if (showDuplicates && !piece.is_duplicate) return false;
     if (showErrors && piece.analysis_status !== 'error') return false;
@@ -227,17 +233,24 @@ const DossierView = () => {
     return true;
   });
 
+  // Get unique types from validated pieces
+  const availableTypes = [...new Set(pieces
+    .map(p => p.validated_data?.type_piece || p.ai_proposal?.type_piece)
+    .filter(Boolean)
+  )];
+
   // Get filter label for display
   const getFilterLabel = () => {
     if (statusFilter === 'a_verifier') return 'À vérifier';
     if (statusFilter === 'pret') return 'Prêtes';
     if (statusFilter === 'error') return 'Erreurs';
+    if (typeFilter) return pieceTypeLabels[typeFilter] || typeFilter;
     if (showDuplicates) return 'Doublons';
     if (showErrors) return 'Erreurs';
     return null;
   };
 
-  const hasActiveFilter = statusFilter || showDuplicates || showErrors;
+  const hasActiveFilter = statusFilter || typeFilter || showDuplicates || showErrors;
 
   const handleUpload = async (files, forceUpload = false) => {
     setUploading(true);

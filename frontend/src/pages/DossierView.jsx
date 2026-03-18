@@ -532,6 +532,45 @@ const DossierView = () => {
     setPreviewPiece(piece);
   };
 
+  // Export chronology for selected pieces only
+  const handleExportSelectedChronology = async () => {
+    const selectedValidatedPieces = pieces
+      .filter(p => selectedPieces.includes(p.id) && p.status === 'pret')
+      .sort((a, b) => {
+        const dateA = a.validated_data?.date_document || '';
+        const dateB = b.validated_data?.date_document || '';
+        return dateA.localeCompare(dateB);
+      });
+    
+    if (selectedValidatedPieces.length === 0) {
+      toast.error('Aucune pièce validée sélectionnée');
+      return;
+    }
+    
+    // Generate chronology text
+    let content = `CHRONOLOGIE DES PIÈCES SÉLECTIONNÉES\n`;
+    content += `Dossier: ${dossier?.title || 'Sans titre'}\n`;
+    content += `Date d'export: ${new Date().toLocaleDateString('fr-FR')}\n`;
+    content += `Pièces sélectionnées: ${selectedValidatedPieces.length}\n`;
+    content += `${'='.repeat(50)}\n\n`;
+    
+    selectedValidatedPieces.forEach((piece, index) => {
+      const data = piece.validated_data || {};
+      content += `${index + 1}. [${data.date_document || 'Date inconnue'}] - Pièce ${piece.numero}\n`;
+      content += `   Titre: ${data.titre || piece.original_filename}\n`;
+      content += `   Type: ${pieceTypeLabels[data.type_piece] || data.type_piece || 'Non défini'}\n`;
+      if (data.resume) {
+        content += `   Résumé: ${data.resume}\n`;
+      }
+      content += '\n';
+    });
+    
+    // Download as text file
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    downloadBlob(blob, `chronologie_selection_${dossier?.title || 'dossier'}.txt`);
+    toast.success(`Chronologie exportée (${selectedValidatedPieces.length} pièces)`);
+  };
+
   if (loading) {
     return (
       <Layout>

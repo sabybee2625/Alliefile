@@ -117,6 +117,7 @@ const DossierView = () => {
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [statusFilter, setStatusFilter] = useState(null); // null = all, 'a_verifier', 'pret', 'error'
+  const [typeFilter, setTypeFilter] = useState(null); // null = all, 'attestation', 'plainte', etc.
   
   // Ref for scrolling to pieces list
   const piecesListRef = useRef(null);

@@ -209,6 +209,7 @@ const DossierView = () => {
   // Reset filter
   const resetFilter = () => {
     setStatusFilter(null);
+    setTypeFilter(null);
     setShowDuplicates(false);
     setShowErrors(false);
   };

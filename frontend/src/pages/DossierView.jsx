@@ -830,15 +830,26 @@ const DossierView = () => {
                         Désélectionner
                       </Button>
                       {selectedPieces.length > 0 && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteSelectedOpen(true)}
-                          className="rounded-sm"
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          Supprimer ({selectedPieces.length})
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleExportSelectedChronology()}
+                            className="rounded-sm"
+                          >
+                            <ListOrdered className="w-4 h-4 mr-1" />
+                            Chrono ({selectedPieces.length})
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setDeleteSelectedOpen(true)}
+                            className="rounded-sm"
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Supprimer ({selectedPieces.length})
+                          </Button>
+                        </>
                       )}
                     </>
                   )}

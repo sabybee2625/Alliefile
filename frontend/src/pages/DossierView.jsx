@@ -1306,36 +1306,32 @@ const DossierView = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Duplicate Detection Modal */}
-      <AlertDialog open={duplicateModalOpen} onOpenChange={setDuplicateModalOpen}>
+      {/* Duplicates Detection Modal */}
+      <AlertDialog open={duplicatesModalOpen} onOpenChange={setDuplicatesModalOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
-              Doublon détecté
+              {duplicatesFound.length} doublon{duplicatesFound.length > 1 ? 's' : ''} détecté{duplicatesFound.length > 1 ? 's' : ''}
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
-              <p>
-                Ce fichier existe déjà dans ce dossier :
-              </p>
-              {duplicateInfo && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-sm">
-                  <p className="font-medium text-amber-900">
-                    Pièce {duplicateInfo.existingPieceNumero} : {duplicateInfo.existingFilename}
-                  </p>
-                </div>
-              )}
-              <p className="text-sm">
-                Que souhaitez-vous faire ?
-              </p>
+              <p>Ces fichiers existent déjà dans ce dossier :</p>
+              <div className="max-h-40 overflow-y-auto space-y-2">
+                {duplicatesFound.map((dup, idx) => (
+                  <div key={idx} className="p-2 bg-amber-50 border border-amber-200 rounded-sm text-sm">
+                    <p className="font-medium text-amber-900">{dup.file.name}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm">Que souhaitez-vous faire ?</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel onClick={handleDuplicateCancel} className="rounded-sm">
-              Annuler (ne pas importer)
+            <AlertDialogCancel onClick={handleDuplicatesKeep} className="rounded-sm">
+              Ignorer les doublons
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDuplicateForceUpload}
+              onClick={handleDuplicatesForceUpload}
               className="bg-amber-600 hover:bg-amber-700 rounded-sm"
             >
               Importer quand même

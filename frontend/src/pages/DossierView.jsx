@@ -255,11 +255,17 @@ const DossierView = () => {
 
   const hasActiveFilter = statusFilter || typeFilter || showDuplicates || showErrors;
 
+  // Duplicate handling state
+  const [duplicatesFound, setDuplicatesFound] = useState([]);
+  const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState([]);
+
   const handleUpload = async (files, forceUpload = false) => {
     setUploading(true);
     let uploaded = 0;
-    let skippedDuplicates = 0;
+    let duplicates = [];
     let errors = [];
+    let remainingFiles = [];
     
     try {
       for (const file of files) {
@@ -268,14 +274,16 @@ const DossierView = () => {
           uploaded++;
         } catch (error) {
           if (error.response?.status === 409) {
-            // Duplicate detected - skip and continue with other files
-            skippedDuplicates++;
+            // Duplicate detected - collect for user decision
+            duplicates.push({
+              file,
+              existingInfo: error.response?.data?.existing_piece || { filename: file.name }
+            });
             continue;
           } else if (error.response?.status === 400) {
             errors.push(`${file.name}: ${error.response?.data?.detail || 'fichier invalide'}`);
             continue;
           } else if (error.response?.status === 403) {
-            // Plan limit reached
             toast.error(error.response?.data?.detail?.message || 'Limite du plan atteinte');
             break;
           } else {
@@ -284,18 +292,22 @@ const DossierView = () => {
         }
       }
       
-      // Show summary
+      // Show summary for uploaded files
       if (uploaded > 0) {
         toast.success(`${uploaded} fichier${uploaded > 1 ? 's' : ''} importé${uploaded > 1 ? 's' : ''}`);
-      }
-      if (skippedDuplicates > 0) {
-        toast.info(`${skippedDuplicates} doublon${skippedDuplicates > 1 ? 's' : ''} ignoré${skippedDuplicates > 1 ? 's' : ''}`);
       }
       if (errors.length > 0) {
         errors.forEach(err => toast.error(err));
       }
       
-      setUploadOpen(false);
+      // If duplicates found, show modal for user decision
+      if (duplicates.length > 0) {
+        setDuplicatesFound(duplicates);
+        setDuplicatesModalOpen(true);
+      } else {
+        setUploadOpen(false);
+      }
+      
       fetchData();
     } catch (error) {
       if (error.response?.status === 413) {

@@ -202,6 +202,7 @@ class PieceResponse(BaseModel):
 
 class ShareLinkCreate(BaseModel):
     expires_in_days: int = 7
+    piece_ids: Optional[List[str]] = None  # None = all pieces, [] = none, [...] = specific
 
 class ShareLinkResponse(BaseModel):
     id: str

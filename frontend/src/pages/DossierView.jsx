@@ -124,11 +124,6 @@ const DossierView = () => {
   // Ref for scrolling to pieces list
   const piecesListRef = useRef(null);
   const tabsRef = useRef(null);
-  
-  // Duplicate modal state
-  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
-  const [duplicateInfo, setDuplicateInfo] = useState(null);
-  const [duplicatePendingFile, setDuplicatePendingFile] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {

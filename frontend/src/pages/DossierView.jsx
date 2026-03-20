@@ -320,28 +320,39 @@ const DossierView = () => {
     }
   };
 
-  const handleDuplicateCancel = () => {
-    setDuplicateModalOpen(false);
-    setDuplicateInfo(null);
-    setDuplicatePendingFile(null);
+  // Handle user decision on duplicates
+  const handleDuplicatesKeep = () => {
+    // User chose to ignore duplicates
+    setDuplicatesModalOpen(false);
+    setDuplicatesFound([]);
     setUploadOpen(false);
+    toast.info(`${duplicatesFound.length} doublon${duplicatesFound.length > 1 ? 's' : ''} ignoré${duplicatesFound.length > 1 ? 's' : ''}`);
   };
 
-  const handleDuplicateForceUpload = async () => {
-    if (!duplicatePendingFile) return;
-    setDuplicateModalOpen(false);
+  const handleDuplicatesForceUpload = async () => {
+    // User chose to upload duplicates anyway
+    setDuplicatesModalOpen(false);
     setUploading(true);
+    let uploaded = 0;
     
     try {
-      await piecesApi.upload(id, duplicatePendingFile, true);
-      toast.success('Fichier importé (marqué comme doublon)');
+      for (const dup of duplicatesFound) {
+        try {
+          await piecesApi.upload(id, dup.file, true); // force upload
+          uploaded++;
+        } catch (e) {
+          console.error('Force upload error:', e);
+        }
+      }
+      if (uploaded > 0) {
+        toast.success(`${uploaded} doublon${uploaded > 1 ? 's' : ''} importé${uploaded > 1 ? 's' : ''}`);
+      }
       fetchData();
     } catch (error) {
-      toast.error('Erreur lors de l\'import');
+      toast.error('Erreur lors de l\'import des doublons');
     } finally {
       setUploading(false);
-      setDuplicateInfo(null);
-      setDuplicatePendingFile(null);
+      setDuplicatesFound([]);
       setUploadOpen(false);
     }
   };

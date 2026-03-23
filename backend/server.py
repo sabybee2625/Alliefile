@@ -409,6 +409,14 @@ async def login(data: UserLogin, request: Request):
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
+    # Check if account has scheduled deletion - cancel it on login
+    if user.get("scheduled_deletion"):
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$unset": {"scheduled_deletion": ""}}
+        )
+        logger.info(f"Account deletion cancelled on login: user={user['id']}")
+    
     token = create_token(user["id"])
     return TokenResponse(
         access_token=token,

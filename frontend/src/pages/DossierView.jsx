@@ -1364,6 +1364,100 @@ const DossierView = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Share Modal with Piece Selection */}
+      <Dialog open={shareModalOpen} onOpenChange={setShareModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5" />
+              Partager le dossier
+            </DialogTitle>
+            <DialogDescription>
+              Sélectionnez les pièces à inclure dans le lien de partage
+            </DialogDescription>
+          </DialogHeader>
+          
+          {!shareLink ? (
+            <>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">
+                    {sharePieceIds.length} / {pieces.length} pièces sélectionnées
+                  </span>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={selectAllSharePieces}>
+                      Tout cocher
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={deselectAllSharePieces}>
+                      Tout décocher
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="max-h-64 overflow-y-auto border rounded-sm divide-y">
+                  {pieces.map(piece => (
+                    <label
+                      key={piece.id}
+                      className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={sharePieceIds.includes(piece.id)}
+                        onChange={() => toggleSharePiece(piece.id)}
+                        className="rounded"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          Pièce {piece.numero} - {piece.validated_data?.titre || piece.original_filename}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {piece.status === 'pret' ? '✓ Validée' : '○ À vérifier'}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShareModalOpen(false)}>
+                  Annuler
+                </Button>
+                <Button 
+                  onClick={handleCreateShareLink}
+                  disabled={creatingShare || sharePieceIds.length === 0}
+                >
+                  {creatingShare ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Share2 className="w-4 h-4 mr-2" />
+                  )}
+                  Créer le lien
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-3 bg-green-50 border border-green-200 rounded-sm">
+                <p className="text-sm text-green-800 font-medium mb-2">
+                  ✓ Lien créé ({sharePieceIds.length} pièces)
+                </p>
+                <p className="text-xs text-green-600 break-all">{shareLink}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={copyShareLink}>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copier le lien
+                </Button>
+                <Button variant="outline" onClick={() => setShareModalOpen(false)}>
+                  Fermer
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

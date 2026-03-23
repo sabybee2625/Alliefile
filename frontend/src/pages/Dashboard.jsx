@@ -481,25 +481,36 @@ const Dashboard = () => {
       <AlertDialog open={deleteAccountOpen} onOpenChange={setDeleteAccountOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-600">Supprimer définitivement votre compte ?</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>Cette action est <strong>irréversible</strong>. Seront supprimés :</p>
+            <AlertDialogTitle className="text-red-600">Supprimer votre compte ?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>Seront supprimés :</p>
               <ul className="list-disc pl-4 text-sm">
                 <li>Tous vos dossiers et pièces</li>
                 <li>Tous vos fichiers uploadés</li>
                 <li>Tous vos liens de partage</li>
                 <li>Votre compte et vos données personnelles</li>
               </ul>
+              <p className="text-sm text-slate-600 mt-2">
+                Choisissez une option :
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
             <AlertDialogCancel className="rounded-sm">Annuler</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => handleDeleteAccount(false)}
+              disabled={deletingAccount}
+              className="border-amber-500 text-amber-700 hover:bg-amber-50 rounded-sm"
+            >
+              {deletingAccount ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Supprimer dans 7 jours'}
+            </Button>
             <AlertDialogAction
-              onClick={handleDeleteAccount}
+              onClick={() => handleDeleteAccount(true)}
               disabled={deletingAccount}
               className="bg-red-600 hover:bg-red-700 rounded-sm"
             >
-              {deletingAccount ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Supprimer mon compte'}
+              {deletingAccount ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Supprimer maintenant'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

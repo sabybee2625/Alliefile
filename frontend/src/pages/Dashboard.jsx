@@ -191,18 +191,22 @@ const Dashboard = () => {
     }
   };
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteAccount = async (immediate = false) => {
     setDeletingAccount(true);
     try {
-      await userApi.deleteAccount();
-      toast.success('Compte supprimé');
-      logout();
-      navigate('/login');
+      const res = await userApi.deleteAccount(immediate);
+      if (immediate) {
+        toast.success('Compte supprimé définitivement');
+        logout();
+        navigate('/login');
+      } else {
+        toast.success('Suppression programmée dans 7 jours. Reconnectez-vous pour annuler.');
+        setDeleteAccountOpen(false);
+      }
     } catch (error) {
       toast.error('Erreur lors de la suppression du compte');
     } finally {
       setDeletingAccount(false);
-      setDeleteAccountOpen(false);
     }
   };
 

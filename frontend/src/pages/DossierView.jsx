@@ -497,18 +497,46 @@ const DossierView = () => {
     }
   };
 
+  const handleOpenShareModal = () => {
+    // Pre-select all validated pieces
+    const validatedPieceIds = pieces.filter(p => p.status === 'pret').map(p => p.id);
+    setSharePieceIds(validatedPieceIds);
+    setShareModalOpen(true);
+    setShareLink(null);
+  };
+
   const handleCreateShareLink = async () => {
     setCreatingShare(true);
     try {
-      const res = await dossiersApi.createShareLink(id, { dossier_id: id, expires_in_days: 7 });
+      const data = {
+        expires_in_days: 7,
+        piece_ids: sharePieceIds.length > 0 ? sharePieceIds : null // null = all pieces
+      };
+      const res = await dossiersApi.createShareLink(id, data);
       const link = `${window.location.origin}/shared/${res.data.token}`;
       setShareLink(link);
-      toast.success('Lien de partage créé');
+      toast.success(`Lien créé (${sharePieceIds.length || pieces.length} pièces)`);
     } catch (error) {
       toast.error('Erreur lors de la création du lien');
     } finally {
       setCreatingShare(false);
     }
+  };
+
+  const toggleSharePiece = (pieceId) => {
+    setSharePieceIds(prev => 
+      prev.includes(pieceId) 
+        ? prev.filter(id => id !== pieceId)
+        : [...prev, pieceId]
+    );
+  };
+
+  const selectAllSharePieces = () => {
+    setSharePieceIds(pieces.map(p => p.id));
+  };
+
+  const deselectAllSharePieces = () => {
+    setSharePieceIds([]);
   };
 
   const copyShareLink = async () => {

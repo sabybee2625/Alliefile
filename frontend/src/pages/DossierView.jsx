@@ -722,16 +722,11 @@ const DossierView = () => {
             <Button
               variant="outline"
               className="rounded-sm"
-              onClick={handleCreateShareLink}
-              disabled={creatingShare}
+              onClick={handleOpenShareModal}
               data-testid="share-btn"
             >
-              {creatingShare ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                <>
-                  <Share2 className="w-4 h-4 mr-2" />
-                  Partager
-                </>
-              )}
+              <Share2 className="w-4 h-4 mr-2" />
+              Partager
             </Button>
             <Button
               className="bg-slate-900 hover:bg-slate-800 rounded-sm"

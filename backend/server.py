@@ -2158,7 +2158,8 @@ async def create_share_link(dossier_id: str, data: ShareLinkCreate, user: dict =
         "dossier_id": dossier_id,
         "token": token,
         "expires_at": expires_at.isoformat(),
-        "created_at": now.isoformat()
+        "created_at": now.isoformat(),
+        "piece_ids": data.piece_ids  # None = all, [] = none, [...] = specific
     }
     await db.share_links.insert_one(link_doc)
     
@@ -2184,8 +2185,13 @@ async def get_shared_dossier(token: str):
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
     
+    # Filter pieces if piece_ids specified
+    query = {"dossier_id": link["dossier_id"]}
+    if link.get("piece_ids") is not None and len(link.get("piece_ids", [])) > 0:
+        query["id"] = {"$in": link["piece_ids"]}
+    
     pieces = await db.pieces.find(
-        {"dossier_id": link["dossier_id"]},
+        query,
         {"_id": 0, "extracted_text": 0}
     ).sort("numero", 1).to_list(1000)
     

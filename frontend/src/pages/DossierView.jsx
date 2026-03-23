@@ -101,6 +101,8 @@ const DossierView = () => {
   const [deleting, setDeleting] = useState(false);
   const [shareLink, setShareLink] = useState(null);
   const [creatingShare, setCreatingShare] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [sharePieceIds, setSharePieceIds] = useState([]); // Selected pieces for sharing
   
   // Selection state
   const [selectedPieces, setSelectedPieces] = useState([]);

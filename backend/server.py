@@ -2321,14 +2321,36 @@ async def get_shared_chronology_pdf(token: str):
 
 # ===================== ACCOUNT DELETION =====================
 
+class AccountDeleteRequest(BaseModel):
+    immediate: bool = False  # If True, delete immediately. If False, schedule for 7 days
+
 @api_router.delete("/account")
-async def delete_account(user: dict = Depends(get_current_user)):
+async def delete_account(user: dict = Depends(get_current_user), immediate: bool = False):
     """
-    Permanently delete user account and ALL associated data.
-    This action is IRREVERSIBLE.
+    Delete user account.
+    - immediate=False (default): Schedule deletion in 7 days (can be cancelled by logging in)
+    - immediate=True: Delete immediately and permanently
     """
     user_id = user["id"]
     
+    if not immediate:
+        # Schedule deletion for 7 days from now
+        deletion_date = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {
+                "scheduled_deletion": deletion_date,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        logger.info(f"Account deletion scheduled: user={user_id}, date={deletion_date}")
+        return {
+            "message": "Suppression programmée dans 7 jours. Reconnectez-vous pour annuler.",
+            "scheduled_deletion": deletion_date,
+            "immediate": False
+        }
+    
+    # Immediate deletion
     # Get all user's dossiers
     dossiers = await db.dossiers.find({"user_id": user_id}).to_list(1000)
     dossier_ids = [d["id"] for d in dossiers]
@@ -2356,10 +2378,11 @@ async def delete_account(user: dict = Depends(get_current_user)):
     # Finally, delete the user
     await db.users.delete_one({"id": user_id})
     
-    logger.info(f"Account deleted: user={user_id}, dossiers={dossiers_result.deleted_count}, pieces={pieces_result.deleted_count}, files={files_deleted}")
+    logger.info(f"Account deleted immediately: user={user_id}, dossiers={dossiers_result.deleted_count}, pieces={pieces_result.deleted_count}, files={files_deleted}")
     
     return {
         "message": "Compte supprimé définitivement",
+        "immediate": True,
         "deleted": {
             "dossiers": dossiers_result.deleted_count,
             "pieces": pieces_result.deleted_count,
@@ -2368,6 +2391,15 @@ async def delete_account(user: dict = Depends(get_current_user)):
             "payment_transactions": payments_result.deleted_count
         }
     }
+
+@api_router.post("/account/cancel-deletion")
+async def cancel_account_deletion(user: dict = Depends(get_current_user)):
+    """Cancel scheduled account deletion"""
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$unset": {"scheduled_deletion": ""}}
+    )
+    return {"message": "Suppression annulée", "cancelled": True}
 
 
 # ===================== SHARE LINK MANAGEMENT =====================

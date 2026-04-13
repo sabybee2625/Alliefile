@@ -1,171 +1,99 @@
 # Dossier Juridique Intelligent - PRD
 
-## Version 1.0.0 - Ready for Deployment
+## Version 1.1.0 - GridFS Storage Migration
 
 ### Original Problem Statement
 Plateforme SaaS juridique pour la constitution, la structuration, le partage et l'argumentation de dossiers juridiques. Destinée aux particuliers accompagnés par des professionnels (avocats, associations).
 
 ---
 
-## V1 Production Ready ✅
+## V1 Production Ready
 
-### Configuration Production (25 Février 2026)
+### Configuration Production
 - [x] MongoDB Atlas connecté (`alliefile-dossier.u4ejts9.mongodb.net`)
 - [x] JWT_SECRET sécurisé (256-bit)
 - [x] CORS restreint au domaine frontend
 - [x] APP_ENV=production
 - [x] Persistance données validée
-- [x] Flux complet testé (inscription → génération → partage)
+- [x] **Stockage fichiers sur MongoDB GridFS** (migration depuis local)
 
 ### Tests Validés
 | Fonctionnalité | Status |
 |----------------|--------|
-| Création compte | ✅ |
-| Création dossier | ✅ |
-| Upload pièces | ✅ |
-| Analyse IA (PDF) | ✅ |
-| Validation pièce | ✅ |
-| Génération expose_faits | ✅ |
-| Partage lien 7 jours | ✅ |
-| Quotas FREE (1 dossier, 15 pièces) | ✅ |
-| Révocation lien | ✅ |
-| Suppression compte | ✅ |
-
----
-
-## V1 Deployment Checklist ✅
-
-### 1. Quotas FREE Strictement Appliqués
-- [x] **1 dossier max** - HTTP 403 avec message clair
-- [x] **15 pièces max** - HTTP 403 avec message clair
-- [x] **Assistant limité à expose_faits** - HTTP 403 pour autres types
-- [x] Messages d'erreur structurés avec `upgrade_url: "/pricing"`
-
-### 2. Stripe Mise à Jour
-- [x] Champs `plan_status` et `current_period_end` ajoutés
-- [x] Retour automatique en FREE à l'expiration
-- [x] Gestion des abonnements annulés
-
-### 3. Pages Légales
-- [x] `/cgu` - Conditions Générales d'Utilisation
-- [x] `/privacy` - Politique de Confidentialité
-- [x] Disclaimer visible sur le Dashboard
-
-### 4. Suppression Définitive
-- [x] `DELETE /api/account` - Supprime tout (fichiers, dossiers, pièces, liens)
-- [x] `DELETE /api/dossiers/{id}` - Supprime fichiers + share_links
-
-### 5. Partage 7 Jours
-- [x] Expiration vérifiée (HTTP 410)
-- [x] Révocation via `DELETE /api/share-links/{id}`
-- [x] Endpoint `GET /api/dossiers/{id}/share-links` pour lister
-
-### 6. Fix "Analyser tout" (v1.0.1)
-- [x] `handleAnalyzeAll` passe maintenant `piece_ids` à l'API
-- [x] Support mode sélection (si sélection active → analyse la sélection)
-- [x] Compteur bouton affiche les pièces **éligibles** (pas queued/analyzing)
-- [x] Toast explicite si aucune pièce éligible
+| Création compte | Done |
+| Création dossier | Done |
+| Upload pièces (GridFS) | Done |
+| Download pièces (GridFS) | Done |
+| Preview pièces (GridFS) | Done |
+| Partage fichiers (GridFS) | Done |
+| Export ZIP (GridFS) | Done |
+| Suppression fichiers (GridFS) | Done |
+| Analyse IA (PDF) | Done |
+| Validation pièce | Done |
+| Génération expose_faits | Done |
+| Partage lien 7 jours | Done |
+| Quotas FREE (1 dossier, 15 pièces) | Done |
+| Révocation lien | Done |
+| Suppression compte | Done |
+| Consentement cookies | Done |
+| Pages légales (CGU, Privacy) | Done |
+| Code Beta ASSO100 | Done |
+| Google Analytics 4 | Done |
+| Détection doublons interactive | Done |
+| Preview .docx | Done |
+| Filtres par type de pièce | Done |
+| Partage sélectif de pièces | Done |
+| Suppression compte différée (7 jours) | Done |
 
 ---
 
 ## Architecture
 
-```
-/app
-├── backend/
-│   ├── server.py         # FastAPI API principale
-│   ├── config.py         # Configuration & Plans
-│   ├── payments.py       # Stripe integration
-│   ├── storage.py        # Abstraction stockage (local/S3)
-│   ├── security.py       # JWT, middlewares
-│   └── rate_limiter.py   # Rate limiting
-├── frontend/
-│   └── src/
-│       ├── pages/
-│       │   ├── Dashboard.jsx
-│       │   ├── DossierView.jsx
-│       │   ├── Pricing.jsx
-│       │   ├── Legal.jsx       # CGU, Privacy, Disclaimer
-│       │   └── SharedDossier.jsx
-│       └── lib/api.js
-```
+### Storage Backend
+- **STORAGE_BACKEND=gridfs** dans `.env`
+- Fichiers stockés dans MongoDB GridFS (collection `file_storage`)
+- Abstraction via `StorageBackend` (supporte local, S3, R2, GridFS)
+- Migration script: `migrate_to_gridfs.py`
+
+### Stack Technique
+- **Frontend**: React + Shadcn/UI
+- **Backend**: FastAPI (Python)
+- **Base de données**: MongoDB Atlas
+- **Stockage fichiers**: MongoDB GridFS
+- **IA**: Gemini via Emergent LLM Key
+- **Paiements**: Stripe (config test)
+- **Analytics**: Google Analytics 4
+
+### Fichiers clés
+- `/app/backend/server.py` - API monolithique (à refactorer)
+- `/app/backend/storage.py` - Abstraction stockage (Local, GridFS, S3)
+- `/app/backend/config.py` - Configuration
+- `/app/backend/migrate_to_gridfs.py` - Script de migration
+- `/app/frontend/src/lib/api.js` - Client API
+- `/app/frontend/src/pages/DossierView.jsx` - Vue dossier
+- `/app/frontend/src/pages/Dashboard.jsx` - Dashboard
 
 ---
 
-## Plans & Limites
+## Backlog
 
-| Feature | FREE | Standard (9.90€) | Premium (19.90€) |
-|---------|------|------------------|------------------|
-| Dossiers | 1 | 5 | Illimité |
-| Pièces totales | 15 | 500 | Illimité |
-| Assistant | expose_faits uniquement | Tous types | Tous types |
-| Export DOCX | ❌ | ✅ | ✅ |
-| Partage avancé | ❌ | ✅ | ✅ |
+### P1 - Prioritaire
+- [ ] Refactoring `server.py` (2500+ lignes) en modules
 
----
+### P2 - Important
+- [ ] Optimisation N+1 queries (`list_dossiers`)
+- [ ] Interface d'administration (codes promo, utilisateurs)
+- [ ] Refonte esthétique du Dashboard
 
-## Variables d'Environnement Production
-
-### Backend (.env)
-```
-APP_ENV=production
-MONGO_URL=<MongoDB Atlas URI>
-DB_NAME=legal_dossier_db
-JWT_SECRET=<openssl rand -hex 32>
-EMERGENT_LLM_KEY=<clé API>
-STRIPE_SECRET_KEY=sk_live_...
-CORS_ORIGINS=https://votre-domaine.com
-```
-
-### Frontend (.env)
-```
-REACT_APP_BACKEND_URL=https://api.votre-domaine.com
-```
+### P3 - Nice to have
+- [ ] Conversion en application mobile (PWA)
+- [ ] Webhooks Stripe
 
 ---
 
-## Endpoints Clés
-
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| POST | /api/auth/register | Inscription (plan free auto) |
-| POST | /api/auth/login | Connexion JWT |
-| GET | /api/auth/stats | Stats utilisateur + limites |
-| POST | /api/dossiers | Créer dossier (vérifie limite) |
-| POST | /api/dossiers/{id}/pieces | Upload pièce (vérifie limite) |
-| POST | /api/dossiers/{id}/assistant | Générer document (vérifie plan) |
-| POST | /api/dossiers/{id}/share | Créer lien partage 7j |
-| DELETE | /api/share-links/{id} | Révoquer lien |
-| DELETE | /api/account | Supprimer compte |
-| POST | /api/payments/checkout | Créer session Stripe |
-
----
-
-## Corrections Appliquées (PROMPT_EMERGENT.md)
-
-1. ✅ Fix `delete_account` → utilise `storage.delete_file()`
-2. ✅ Version API → `1.0.0`
-3. ✅ Nettoyage `analysis_locks` → `finally: analysis_locks.pop()`
-4. ✅ `aioboto3` ajouté aux requirements
-5. ✅ `cra-template` retiré du package.json
-
----
-
-## Prochaines Étapes (Post-V1)
-
-### Phase 2 - Rangement Intelligent
-- [ ] Filtres dynamiques (statut, type, date, mots-clés)
-- [ ] Cartes stats cliquables
-- [ ] Barre de recherche plein texte
-
-### Phase 3 - Partage Avancé
-- [ ] Partage granulaire (sélection de pièces)
-- [ ] Liens avec mot de passe
-
-### Phase 4 - Infrastructure
-- [ ] Migration stockage vers S3/R2
-- [ ] Codes promotionnels admin
-
----
-
-*Dernière mise à jour: Décembre 2025*
+## DB Schema
+- `users`: `{ id, name, email, hashed_password, plan, plan_status, current_period_end, scheduled_deletion_at }`
+- `dossiers`: `{ id, title, description, user_id }`
+- `pieces`: `{ id, dossier_id, numero, filename, original_filename, file_type, file_size, file_hash, status, ai_proposal, validated_data }`
+- `share_links`: `{ id, dossier_id, token, expires_at, piece_ids: List[str] }`
+- `file_storage.files` + `file_storage.chunks`: GridFS collections

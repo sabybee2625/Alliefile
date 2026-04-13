@@ -1,6 +1,6 @@
 """
 Storage abstraction layer for file management
-Supports local filesystem and S3-compatible storage (AWS S3, Cloudflare R2, MinIO)
+Supports local filesystem, S3-compatible storage, and MongoDB GridFS
 """
 import os
 import aiofiles
@@ -9,6 +9,7 @@ from typing import Optional, BinaryIO, AsyncGenerator
 from abc import ABC, abstractmethod
 import hashlib
 import logging
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,16 @@ class StorageBackend(ABC):
     def get_file_size(self, path: str) -> int:
         """Get file size in bytes"""
         pass
+
+    async def get_temp_filepath(self, filename: str) -> Path:
+        """Download file to a temporary location and return the path.
+        Caller is responsible for deleting the temp file."""
+        content = await self.get_file(filename)
+        ext = Path(filename).suffix
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        tmp.write(content)
+        tmp.close()
+        return Path(tmp.name)
 
 
 class LocalStorage(StorageBackend):
@@ -119,6 +130,94 @@ class LocalStorage(StorageBackend):
         full_path = self._get_full_path(path)
         return full_path.stat().st_size if full_path.exists() else 0
 
+    async def get_temp_filepath(self, filename: str) -> Path:
+        """For local storage, just return the actual path (no temp copy needed)"""
+        full_path = self._get_full_path(filename)
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {filename}")
+        return full_path
+
+
+class GridFSStorage(StorageBackend):
+    """MongoDB GridFS storage - files stored in MongoDB Atlas"""
+    
+    def __init__(self, db):
+        import motor.motor_asyncio
+        from gridfs import NoFile
+        self._db = db
+        self._bucket = motor.motor_asyncio.AsyncIOMotorGridFSBucket(db, bucket_name="file_storage")
+    
+    async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
+        """Save file to GridFS"""
+        key = f"{folder}/{filename}" if folder else filename
+        
+        # Delete existing file with same name (overwrite)
+        try:
+            async for grid_file in self._bucket.find({"filename": key}):
+                await self._bucket.delete(grid_file._id)
+        except Exception:
+            pass
+        
+        await self._bucket.upload_from_stream(key, content)
+        logger.debug(f"Saved file to GridFS: {key}")
+        return key
+    
+    async def get_file(self, path: str) -> bytes:
+        """Get file from GridFS"""
+        try:
+            stream = await self._bucket.open_download_stream_by_name(path)
+            return await stream.read()
+        except Exception as e:
+            raise FileNotFoundError(f"File not found in GridFS: {path}")
+    
+    async def delete_file(self, path: str) -> bool:
+        """Delete file from GridFS"""
+        try:
+            deleted = False
+            async for grid_file in self._bucket.find({"filename": path}):
+                await self._bucket.delete(grid_file._id)
+                deleted = True
+            if deleted:
+                logger.debug(f"Deleted file from GridFS: {path}")
+            return deleted
+        except Exception as e:
+            logger.error(f"Error deleting file from GridFS {path}: {e}")
+            return False
+    
+    async def file_exists(self, path: str) -> bool:
+        """Check if file exists in GridFS"""
+        try:
+            cursor = self._bucket.find({"filename": path})
+            async for _ in cursor:
+                return True
+            return False
+        except Exception:
+            return False
+    
+    async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
+        """Stream file from GridFS"""
+        try:
+            stream = await self._bucket.open_download_stream_by_name(path)
+            while chunk := await stream.readchunk():
+                if not chunk:
+                    break
+                yield chunk
+        except Exception as e:
+            raise FileNotFoundError(f"File not found in GridFS: {path}")
+    
+    def get_file_size(self, path: str) -> int:
+        """Get file size - sync version returns 0, use async version"""
+        return 0
+
+    async def get_file_size_async(self, path: str) -> int:
+        """Get file size from GridFS"""
+        try:
+            async for grid_file in self._bucket.find({"filename": path}):
+                return grid_file.length
+            return 0
+        except Exception:
+            return 0
+
 
 class S3Storage(StorageBackend):
     """
@@ -132,7 +231,7 @@ class S3Storage(StorageBackend):
         access_key: str,
         secret_key: str,
         region: str = "eu-west-1",
-        endpoint_url: Optional[str] = None  # For R2/MinIO
+        endpoint_url: Optional[str] = None
     ):
         self.bucket = bucket
         self.access_key = access_key
@@ -163,22 +262,14 @@ class S3Storage(StorageBackend):
     async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
         """Save file to S3"""
         client = await self._get_client()
-        
         key = f"{folder}/{filename}" if folder else filename
-        
-        await client.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=content
-        )
-        
+        await client.put_object(Bucket=self.bucket, Key=key, Body=content)
         logger.debug(f"Saved file to S3: {key}")
         return key
     
     async def get_file(self, path: str) -> bytes:
         """Get file from S3"""
         client = await self._get_client()
-        
         response = await client.get_object(Bucket=self.bucket, Key=path)
         return await response['Body'].read()
     
@@ -199,28 +290,32 @@ class S3Storage(StorageBackend):
             client = await self._get_client()
             await client.head_object(Bucket=self.bucket, Key=path)
             return True
-        except:
+        except Exception:
             return False
     
     async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
         """Stream file from S3"""
         client = await self._get_client()
         response = await client.get_object(Bucket=self.bucket, Key=path)
-        
         async for chunk in response['Body'].iter_chunks(chunk_size=65536):
             yield chunk
     
     def get_file_size(self, path: str) -> int:
         """Get file size from S3 - sync version for compatibility"""
-        # This would need to be async in practice
         return 0
 
 
-def get_storage_backend() -> StorageBackend:
+def get_storage_backend(db_instance=None):
     """Factory function to get the configured storage backend"""
     from config import config
     
-    if config.STORAGE_BACKEND.value == "s3" and config.is_s3_configured:
+    backend_type = config.STORAGE_BACKEND.value
+    
+    if backend_type == "gridfs":
+        if db_instance is None:
+            raise RuntimeError("GridFS storage requires a database instance")
+        return GridFSStorage(db_instance)
+    elif backend_type == "s3" and config.is_s3_configured:
         return S3Storage(
             bucket=config.S3_BUCKET,
             access_key=config.S3_ACCESS_KEY,
@@ -228,8 +323,7 @@ def get_storage_backend() -> StorageBackend:
             region=config.S3_REGION,
             endpoint_url=config.S3_ENDPOINT_URL
         )
-    elif config.STORAGE_BACKEND.value == "r2" and config.is_s3_configured:
-        # Cloudflare R2 uses S3-compatible API
+    elif backend_type == "r2" and config.is_s3_configured:
         return S3Storage(
             bucket=config.S3_BUCKET,
             access_key=config.S3_ACCESS_KEY,
@@ -238,7 +332,6 @@ def get_storage_backend() -> StorageBackend:
             endpoint_url=config.S3_ENDPOINT_URL
         )
     else:
-        # Default to local storage
         return LocalStorage(config.UPLOAD_DIR)
 
 

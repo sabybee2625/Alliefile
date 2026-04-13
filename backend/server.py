@@ -44,7 +44,7 @@ from security import (
     log_share_access,
     validate_user_owns_resource
 )
-from storage import get_storage_backend, compute_file_hash, LocalStorage
+from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -72,8 +72,8 @@ api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Storage backend (abstracted for S3 migration)
-storage = get_storage_backend()
+# Storage backend (abstracted for cloud migration)
+storage = get_storage_backend(db_instance=db)
 
 # Logging
 log_level = logging.DEBUG if config.DEBUG else logging.INFO
@@ -865,9 +865,7 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
     
     pieces = await db.pieces.find({"dossier_id": dossier_id}).to_list(1000)
     for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        await storage.delete_file(piece["filename"])
     
     await db.pieces.delete_many({"dossier_id": dossier_id})
     await db.share_links.delete_many({"dossier_id": dossier_id})
@@ -1036,23 +1034,25 @@ async def upload_piece(
     # Save file - use stored content bytes
     piece_id = str(uuid.uuid4())
     filename = f"{piece_id}{ext}"
-    filepath = config.UPLOAD_DIR / filename
     
-    async with aiofiles.open(filepath, 'wb') as f:
-        await f.write(content)
-    
-    # Verify file was written correctly
-    actual_size = filepath.stat().st_size
-    if actual_size != file_size:
-        logger.error(f"File size mismatch: expected {file_size}, got {actual_size}")
-        filepath.unlink()  # Clean up
-        raise HTTPException(status_code=500, detail="Erreur lors de l'enregistrement du fichier")
-    
-    # Convert HEIC if needed
+    # Convert HEIC if needed (in memory before saving)
     if file_type == "heic":
-        filepath = convert_heic_to_jpg(filepath)
-        filename = filepath.name
-        file_type = "image"
+        try:
+            from PIL import Image
+            from pillow_heif import register_heif_opener
+            register_heif_opener()
+            img = Image.open(io.BytesIO(content))
+            jpg_buffer = io.BytesIO()
+            img.convert('RGB').save(jpg_buffer, 'JPEG', quality=95)
+            content = jpg_buffer.getvalue()
+            filename = f"{piece_id}.jpg"
+            file_size = len(content)
+            file_type = "image"
+        except Exception as e:
+            logger.error(f"HEIC conversion error: {e}")
+    
+    # Save to storage backend (GridFS/S3/local)
+    await storage.save_file(content, filename)
     
     now = datetime.now(timezone.utc).isoformat()
     piece_doc = {
@@ -1128,14 +1128,15 @@ async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if not filepath.exists():
+    try:
+        content = await storage.get_file(piece["filename"])
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     
-    return FileResponse(
-        filepath, 
-        filename=piece["original_filename"],
-        media_type="application/octet-stream"
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{piece["original_filename"]}"'}
     )
 
 @api_router.get("/pieces/{piece_id}/preview")
@@ -1149,8 +1150,9 @@ async def preview_piece_file(piece_id: str, user: dict = Depends(get_current_use
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if not filepath.exists():
+    try:
+        content = await storage.get_file(piece["filename"])
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     
     # Determine content type
@@ -1162,9 +1164,6 @@ async def preview_piece_file(piece_id: str, user: dict = Depends(get_current_use
         ".png": "image/png",
     }
     content_type = content_types.get(ext, "application/octet-stream")
-    
-    async with aiofiles.open(filepath, 'rb') as f:
-        content = await f.read()
     
     return Response(
         content=content,
@@ -1284,10 +1283,15 @@ async def process_analysis_queue(dossier_id: str, user: dict = Depends(get_curre
             )
             
             # Perform analysis
-            filepath = config.UPLOAD_DIR / piece["filename"]
-            ai_proposal = await analyze_document_with_ai(
-                filepath, piece["file_type"], piece["original_filename"], piece["id"]
-            )
+            filepath = await storage.get_temp_filepath(piece["filename"])
+            try:
+                ai_proposal = await analyze_document_with_ai(
+                    filepath, piece["file_type"], piece["original_filename"], piece["id"]
+                )
+            finally:
+                # Clean up temp file (only if it's a real temp file, not local storage)
+                if isinstance(storage, GridFSStorage) and filepath.exists():
+                    filepath.unlink()
             
             # Update with results
             await db.pieces.update_one(
@@ -1380,8 +1384,12 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
     )
     
     try:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        filepath = await storage.get_temp_filepath(piece["filename"])
+        try:
+            ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        finally:
+            if isinstance(storage, GridFSStorage) and filepath.exists():
+                filepath.unlink()
         
         await db.pieces.update_one(
             {"id": piece_id},
@@ -1445,8 +1453,12 @@ async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user))
     )
     
     try:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        filepath = await storage.get_temp_filepath(piece["filename"])
+        try:
+            ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        finally:
+            if isinstance(storage, GridFSStorage) and filepath.exists():
+                filepath.unlink()
         
         await db.pieces.update_one(
             {"id": piece_id},
@@ -1507,9 +1519,7 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if filepath.exists():
-        filepath.unlink()
+    await storage.delete_file(piece["filename"])
     
     await db.pieces.delete_one({"id": piece_id})
     return {"message": "Piece deleted"}
@@ -1533,9 +1543,7 @@ async def delete_many_pieces(
     
     deleted_count = 0
     for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        await storage.delete_file(piece["filename"])
         await db.pieces.delete_one({"id": piece["id"]})
         deleted_count += 1
     
@@ -1555,9 +1563,7 @@ async def delete_error_pieces(dossier_id: str, user: dict = Depends(get_current_
     
     deleted_count = 0
     for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        await storage.delete_file(piece["filename"])
         await db.pieces.delete_one({"id": piece["id"]})
         deleted_count += 1
     
@@ -1738,11 +1744,14 @@ async def export_zip(dossier_id: str, user: dict = Depends(get_current_user)):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for p in pieces:
-            filepath = config.UPLOAD_DIR / p["filename"]
-            if filepath.exists():
+            try:
+                file_content = await storage.get_file(p["filename"])
                 ext = Path(p["original_filename"]).suffix
                 arcname = f"Piece_{p['numero']}{ext}"
-                zf.write(filepath, arcname)
+                zf.writestr(arcname, file_content)
+            except FileNotFoundError:
+                logger.warning(f"File not found for piece {p['id']}: {p['filename']}")
+                continue
     
     zip_buffer.seek(0)
     return StreamingResponse(
@@ -2244,11 +2253,16 @@ async def get_shared_piece_file(token: str, piece_id: str):
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if not filepath.exists():
+    try:
+        content = await storage.get_file(piece["filename"])
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     
-    return FileResponse(filepath, filename=piece["original_filename"])
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{piece["original_filename"]}"'}
+    )
 
 @api_router.get("/shared/{token}/export/pdf")
 async def get_shared_chronology_pdf(token: str):
@@ -2504,8 +2518,52 @@ async def health():
         "max_file_size_mb": config.MAX_FILE_SIZE_MB,
         "environment": config.ENV.value,
         "stripe_configured": config.is_stripe_configured,
-        "s3_configured": config.is_s3_configured
+        "s3_configured": config.is_s3_configured,
+        "storage_backend": config.STORAGE_BACKEND.value
     }
+
+@api_router.post("/admin/migrate-storage")
+async def migrate_local_to_gridfs(user: dict = Depends(get_current_user)):
+    """Migrate files from local storage to GridFS (admin only)"""
+    if user.get("plan") != "premium":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    if config.STORAGE_BACKEND.value != "gridfs":
+        return {"message": "Storage backend is not gridfs", "migrated": 0}
+    
+    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name="file_storage")
+    
+    upload_dir = config.UPLOAD_DIR
+    if not upload_dir.exists():
+        return {"message": "No uploads directory", "migrated": 0}
+    
+    pieces = await db.pieces.find({}, {"filename": 1, "_id": 0}).to_list(100000)
+    referenced = {p["filename"] for p in pieces}
+    
+    migrated = 0
+    already = 0
+    errors = 0
+    
+    for filepath in upload_dir.iterdir():
+        if filepath.is_dir() or filepath.name not in referenced:
+            continue
+        
+        existing = await bucket.find({"filename": filepath.name}).to_list(1)
+        if existing:
+            already += 1
+            continue
+        
+        try:
+            with open(filepath, 'rb') as f:
+                content = f.read()
+            await bucket.upload_from_stream(filepath.name, content)
+            migrated += 1
+        except Exception as e:
+            logger.error(f"Migration error for {filepath.name}: {e}")
+            errors += 1
+    
+    return {"migrated": migrated, "already_existed": already, "errors": errors}
 
 # Include router
 app.include_router(api_router)

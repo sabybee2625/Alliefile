@@ -17,6 +17,7 @@ class StorageBackend(str, Enum):
     LOCAL = "local"
     S3 = "s3"
     R2 = "r2"
+    GRIDFS = "gridfs"
 
 class Config:
     """Application configuration with production-ready defaults"""

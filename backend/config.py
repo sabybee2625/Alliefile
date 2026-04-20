@@ -17,6 +17,7 @@ class StorageBackend(str, Enum):
     LOCAL = "local"
     S3 = "s3"
     R2 = "r2"
+    GRIDFS = "gridfs"
 
 class Config:
     """Application configuration with production-ready defaults"""
@@ -44,13 +45,13 @@ class Config:
         self.CORS_ORIGINS = self._get_cors_origins()
         
         # Database
-        self.MONGO_URL = os.environ.get("MONGO_URL")
+        self.MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?retryWrites=true&w=majority")
         if not self.MONGO_URL:
             raise RuntimeError("MONGO_URL environment variable is required")
-        self.DB_NAME = os.environ.get("DB_NAME", "legal_dossier_db")
+        self.DB_NAME = os.environ.get("DB_NAME", "alliefile")
         
         # Storage
-        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "local"))
+        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "gridfs"))
         self.UPLOAD_DIR = self.ROOT_DIR / "uploads"
         self.EXPORTS_DIR = self.ROOT_DIR / "exports"
         

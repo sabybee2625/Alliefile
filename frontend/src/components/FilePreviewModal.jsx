@@ -101,6 +101,22 @@ export const FilePreviewModal = ({ piece, onClose }) => {
             <div className="flex items-center justify-center h-96">
               <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
             </div>
+          ) : piece.file_missing ? (
+            <div className="flex flex-col items-center justify-center h-96 text-slate-500">
+              <FileQuestion className="w-16 h-16 mb-4" />
+              <p>Le fichier original est manquant.</p>
+              <p className="text-sm text-slate-400">Cependant, les métadonnées et l'analyse IA sont disponibles.</p>
+              {piece.extracted_text && (
+                <div className="mt-4 p-4 bg-slate-100 rounded-sm max-h-48 overflow-y-auto w-3/4 text-sm text-slate-700">
+                  <p className="font-semibold mb-2">Extrait de l'analyse IA :</p>
+                  <p>{piece.extracted_text.substring(0, 500)}...</p>
+                </div>
+              )}
+              <Button onClick={handleDownload} className="mt-4 rounded-sm" disabled>
+                <Download className="w-4 h-4 mr-2" />
+                Télécharger le fichier (indisponible)
+              </Button>
+            </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-96 text-slate-500">
               <FileQuestion className="w-16 h-16 mb-4" />

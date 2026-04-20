@@ -95,6 +95,78 @@ analysis_locks = {}
 MAX_CONCURRENT_ANALYSES = config.MAX_CONCURRENT_ANALYSES
 ANALYSIS_RATE_LIMIT_SECONDS = 2  # Minimum seconds between analyses
 
+FILE_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".txt": "text/plain",
+}
+
+
+def guess_uploaded_file_type(filename: str) -> str:
+    ext = Path(filename or "").suffix.lower()
+    file_type_map = {
+        ".pdf": "pdf",
+        ".jpg": "image",
+        ".jpeg": "image",
+        ".png": "image",
+        ".docx": "docx",
+        ".doc": "doc",
+        ".heic": "heic",
+        ".heif": "heic",
+        ".txt": "text",
+    }
+    return file_type_map.get(ext, "other")
+
+
+def guess_content_type(filename: str, fallback: str = "application/octet-stream") -> str:
+    ext = Path(filename or "").suffix.lower()
+    return FILE_CONTENT_TYPES.get(ext, fallback)
+
+
+def normalize_piece_document(piece: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(piece)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    normalized["filename"] = normalized.get("filename") or ""
+    normalized["original_filename"] = normalized.get("original_filename") or normalized["filename"] or "document"
+    normalized["file_type"] = normalized.get("file_type") or guess_uploaded_file_type(normalized["original_filename"])
+    normalized["file_size"] = normalized.get("file_size") or 0
+    normalized["file_hash"] = normalized.get("file_hash")
+    normalized["is_duplicate"] = bool(normalized.get("is_duplicate", False))
+    normalized["source"] = normalized.get("source") or "upload"
+    normalized["status"] = normalized.get("status") or ("pret" if normalized.get("validated_data") else "a_verifier")
+    normalized["analysis_status"] = normalized.get("analysis_status") or ("complete" if normalized.get("ai_proposal") else "pending")
+    normalized["analysis_error"] = normalized.get("analysis_error")
+    normalized["analysis_queued_at"] = normalized.get("analysis_queued_at")
+    normalized["analysis_started_at"] = normalized.get("analysis_started_at")
+    normalized["analysis_completed_at"] = normalized.get("analysis_completed_at")
+    normalized["created_at"] = normalized.get("created_at") or normalized.get("updated_at") or now_iso
+    normalized["updated_at"] = normalized.get("updated_at") or normalized["created_at"]
+
+    return normalized
+
+
+def piece_to_response(piece: Dict[str, Any]) -> "PieceResponse":
+    return PieceResponse(**normalize_piece_document(piece))
+
+
+async def get_piece_file_content(piece: Dict[str, Any]) -> bytes:
+    storage_path = piece.get("filename")
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        return await storage.get_file(storage_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+
+
 # ===================== MODELS =====================
 
 class UserCreate(BaseModel):
@@ -864,10 +936,12 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Dossier not found")
     
     pieces = await db.pieces.find({"dossier_id": dossier_id}).to_list(1000)
-    for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        for piece in pieces:
+            try:
+                await storage.delete_file(piece["filename"])
+            except Exception as e:
+                logger.warning(f"Could not delete file {piece["filename"]}: {e}")
+
     
     await db.pieces.delete_many({"dossier_id": dossier_id})
     await db.share_links.delete_many({"dossier_id": dossier_id})
@@ -876,27 +950,28 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
 
 # ===================== FILE PROCESSING =====================
 
-def convert_heic_to_jpg(filepath: Path) -> Path:
+def convert_heic_to_jpg(file_content: bytes) -> bytes:
     """Convert HEIC to JPG"""
     try:
         from PIL import Image
         from pillow_heif import register_heif_opener
         register_heif_opener()
         
-        img = Image.open(filepath)
-        new_path = filepath.with_suffix('.jpg')
-        img.convert('RGB').save(new_path, 'JPEG', quality=95)
-        filepath.unlink()
-        return new_path
+        from io import BytesIO
+        img = Image.open(BytesIO(file_content))
+        output_buffer = BytesIO()
+        img.convert("RGB").save(output_buffer, "JPEG", quality=95)
+        return output_buffer.getvalue()
     except Exception as e:
         logger.error(f"HEIC conversion error: {e}")
-        return filepath
+        return file_content
 
-def extract_text_from_docx(filepath: Path) -> str:
+def extract_text_from_docx(file_content: bytes) -> str:
     """Extract text from DOCX file"""
     try:
         from docx import Document
-        doc = Document(filepath)
+        from io import BytesIO
+        doc = Document(BytesIO(file_content))
         text_parts = []
         for para in doc.paragraphs:
             text_parts.append(para.text)
@@ -909,21 +984,28 @@ def extract_text_from_docx(filepath: Path) -> str:
         logger.error(f"DOCX extraction error: {e}")
         return ""
 
-def extract_text_from_doc(filepath: Path) -> str:
+def extract_text_from_doc(file_content: bytes) -> str:
     """Extract text from DOC file using antiword or fallback"""
     try:
-        result = subprocess.run(['antiword', str(filepath)], capture_output=True, text=True, timeout=30)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".doc") as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = Path(temp_file.name)
+        result = subprocess.run([\'antiword\', str(temp_file_path)], capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             return result.stdout
     except Exception:
         pass
+    finally:
+        if \'temp_file_path\' in locals() and temp_file_path.exists():
+            temp_file_path.unlink()
     return ""
 
-def extract_text_from_pdf(filepath: Path) -> str:
+def extract_text_from_pdf(file_content: bytes) -> str:
     """Extract text from PDF"""
     try:
         from pypdf import PdfReader
-        reader = PdfReader(filepath)
+        from io import BytesIO
+        reader = PdfReader(BytesIO(file_content))
         text_parts = []
         for page in reader.pages[:50]:
             text_parts.append(page.extract_text() or "")
@@ -1026,40 +1108,36 @@ async def upload_piece(
     
     # Determine file type
     ext = Path(file.filename).suffix.lower()
-    file_type_map = {
-        ".pdf": "pdf", ".jpg": "image", ".jpeg": "image", ".png": "image",
-        ".docx": "docx", ".doc": "doc", ".heic": "heic", ".heif": "heic",
-        ".txt": "text"
-    }
-    file_type = file_type_map.get(ext, "other")
+    file_type = guess_uploaded_file_type(file.filename)
     
     # Save file - use stored content bytes
     piece_id = str(uuid.uuid4())
     filename = f"{piece_id}{ext}"
-    filepath = config.UPLOAD_DIR / filename
-    
-    async with aiofiles.open(filepath, 'wb') as f:
-        await f.write(content)
+    storage_path = await storage.save_file(content, filename)
     
     # Verify file was written correctly
-    actual_size = filepath.stat().st_size
+    stored_content = await storage.get_file(storage_path)
+    actual_size = len(stored_content)
     if actual_size != file_size:
         logger.error(f"File size mismatch: expected {file_size}, got {actual_size}")
-        filepath.unlink()  # Clean up
+        await storage.delete_file(storage_path)
         raise HTTPException(status_code=500, detail="Erreur lors de l'enregistrement du fichier")
     
-    # Convert HEIC if needed
-    if file_type == "heic":
-        filepath = convert_heic_to_jpg(filepath)
-        filename = filepath.name
+    # Convert HEIC if needed when local storage is used
+    if file_type == "heic" and isinstance(storage, LocalStorage):
+        converted_content = convert_heic_to_jpg(content)
+        # Save the converted content, potentially overwriting the original HEIC
+        storage_path = await storage.save_file(converted_content, filename)
         file_type = "image"
+        content_type = "image/jpeg"
+        file_size = len(converted_content)
     
     now = datetime.now(timezone.utc).isoformat()
     piece_doc = {
         "id": piece_id,
         "dossier_id": dossier_id,
         "numero": next_numero,
-        "filename": filename,
+        "filename": storage_path,
         "original_filename": file.filename,
         "file_type": file_type,
         "file_size": file_size,
@@ -1083,7 +1161,7 @@ async def upload_piece(
     
     logger.info(f"Uploaded piece {piece_id}: {file.filename}, size={file_size}, type={file_type}")
     
-    return PieceResponse(**{k: v for k, v in piece_doc.items() if k not in ["extracted_text", "content_type"]})
+    return piece_to_response({k: v for k, v in piece_doc.items() if k not in ["extracted_text", "content_type"]})
 
 @api_router.get("/dossiers/{dossier_id}/pieces", response_model=List[PieceResponse])
 async def list_pieces(
@@ -1103,7 +1181,7 @@ async def list_pieces(
         query["analysis_status"] = "error"
     
     pieces = await db.pieces.find(query, {"_id": 0, "extracted_text": 0}).sort("numero", 1).to_list(1000)
-    return [PieceResponse(**p) for p in pieces]
+    return [piece_to_response(p) for p in pieces]
 
 @api_router.get("/pieces/{piece_id}", response_model=PieceResponse)
 async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
@@ -1115,7 +1193,7 @@ async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    return PieceResponse(**piece)
+    return piece_to_response(piece)
 
 @api_router.get("/pieces/{piece_id}/file")
 async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
@@ -1128,14 +1206,18 @@ async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+    content = await get_piece_file_content(piece)
+    media_type = guess_content_type(
+        piece.get("original_filename") or piece.get("filename"),
+        piece.get("content_type") or "application/octet-stream"
+    )
     
-    return FileResponse(
-        filepath, 
-        filename=piece["original_filename"],
-        media_type="application/octet-stream"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{piece["original_filename"]}"'
+        }
     )
 
 @api_router.get("/pieces/{piece_id}/preview")
@@ -1149,22 +1231,11 @@ async def preview_piece_file(piece_id: str, user: dict = Depends(get_current_use
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    # Determine content type
-    ext = Path(piece["filename"]).suffix.lower()
-    content_types = {
-        ".pdf": "application/pdf",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-    }
-    content_type = content_types.get(ext, "application/octet-stream")
-    
-    async with aiofiles.open(filepath, 'rb') as f:
-        content = await f.read()
+    content = await get_piece_file_content(piece)
+    content_type = guess_content_type(
+        piece.get("original_filename") or piece.get("filename"),
+        piece.get("content_type") or "application/octet-stream"
+    )
     
     return Response(
         content=content,
@@ -1284,9 +1355,9 @@ async def process_analysis_queue(dossier_id: str, user: dict = Depends(get_curre
             )
             
             # Perform analysis
-            filepath = config.UPLOAD_DIR / piece["filename"]
+            file_content = await storage.get_file(piece["filename"])
             ai_proposal = await analyze_document_with_ai(
-                filepath, piece["file_type"], piece["original_filename"], piece["id"]
+                file_content, piece["file_type"], piece["original_filename"], piece["id"]
             )
             
             # Update with results
@@ -1380,8 +1451,8 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
     )
     
     try:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        file_content = await storage.get_file(piece["filename"])
+        ai_proposal = await analyze_document_with_ai(file_content, piece["file_type"], piece["original_filename"], piece_id)
         
         await db.pieces.update_one(
             {"id": piece_id},
@@ -1408,7 +1479,7 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
         analysis_locks.pop(lock_key, None)
     
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
-    return PieceResponse(**piece)
+    return piece_to_response(piece)
 
 @api_router.post("/pieces/{piece_id}/reanalyze", response_model=PieceResponse)
 async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
@@ -1445,8 +1516,8 @@ async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user))
     )
     
     try:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
+        file_content = await storage.get_file(piece["filename"])
+        ai_proposal = await analyze_document_with_ai(file_content, piece["file_type"], piece["original_filename"], piece_id)
         
         await db.pieces.update_one(
             {"id": piece_id},
@@ -1473,7 +1544,7 @@ async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user))
         analysis_locks.pop(lock_key, None)
     
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
-    return PieceResponse(**piece)
+    return piece_to_response(piece)
 
 @api_router.post("/pieces/{piece_id}/validate", response_model=PieceResponse)
 async def validate_piece(piece_id: str, data: PieceValidation, user: dict = Depends(get_current_user)):
@@ -1495,7 +1566,7 @@ async def validate_piece(piece_id: str, data: PieceValidation, user: dict = Depe
     )
     
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
-    return PieceResponse(**piece)
+    return piece_to_response(piece)
 
 @api_router.delete("/pieces/{piece_id}")
 async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
@@ -1507,9 +1578,10 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if filepath.exists():
-        filepath.unlink()
+    try:
+        await storage.delete_file(piece["filename"])
+    except Exception as e:
+        logger.warning(f"Could not delete file {piece["filename"]}: {e}")
     
     await db.pieces.delete_one({"id": piece_id})
     return {"message": "Piece deleted"}
@@ -1533,9 +1605,10 @@ async def delete_many_pieces(
     
     deleted_count = 0
     for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        try:
+            await storage.delete_file(piece["filename"])
+        except Exception as e:
+            logger.warning(f"Could not delete file {piece["filename"]}: {e}")
         await db.pieces.delete_one({"id": piece["id"]})
         deleted_count += 1
     
@@ -1555,9 +1628,10 @@ async def delete_error_pieces(dossier_id: str, user: dict = Depends(get_current_
     
     deleted_count = 0
     for piece in pieces:
-        filepath = config.UPLOAD_DIR / piece["filename"]
-        if filepath.exists():
-            filepath.unlink()
+        try:
+            await storage.delete_file(piece["filename"])
+        except Exception as e:
+            logger.warning(f"Could not delete file {piece["filename"]}: {e}")
         await db.pieces.delete_one({"id": piece["id"]})
         deleted_count += 1
     
@@ -1577,7 +1651,7 @@ async def renumber_pieces(dossier_id: str, user: dict = Depends(get_current_user
 
 # ===================== AI ANALYSIS =====================
 
-async def analyze_document_with_ai(filepath: Path, file_type: str, original_filename: str, piece_id: str) -> dict:
+async def analyze_document_with_ai(file_content: bytes, file_type: str, original_filename: str, piece_id: str) -> dict:
     """Analyze document using Gemini Vision"""
     from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
     
@@ -1590,11 +1664,11 @@ async def analyze_document_with_ai(filepath: Path, file_type: str, original_file
         # Extract text for DOCX/DOC files first
         extracted_text = None
         if file_type == "docx":
-            extracted_text = extract_text_from_docx(filepath)
+            extracted_text = extract_text_from_docx(file_content)
         elif file_type == "doc":
-            extracted_text = extract_text_from_doc(filepath)
+            extracted_text = extract_text_from_doc(file_content)
         elif file_type == "pdf":
-            extracted_text = extract_text_from_pdf(filepath)
+            extracted_text = extract_text_from_pdf(file_content)
         
         # Store extracted text
         if extracted_text:
@@ -1642,11 +1716,10 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             }
             mime_type = mime_map.get(file_type, "application/octet-stream")
-            
             file_content = FileContentWithMimeType(
-                file_path=str(filepath),
-                mime_type=mime_type
-            )
+                    data=file_content,
+                    mime_type=mime_type
+                )
             
             user_message = UserMessage(
                 text=f"Analyse ce document juridique (nom original: {original_filename}). Extrais toutes les informations pertinentes.",
@@ -1738,11 +1811,14 @@ async def export_zip(dossier_id: str, user: dict = Depends(get_current_user)):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for p in pieces:
-            filepath = config.UPLOAD_DIR / p["filename"]
-            if filepath.exists():
-                ext = Path(p["original_filename"]).suffix
-                arcname = f"Piece_{p['numero']}{ext}"
-                zf.write(filepath, arcname)
+            try:
+                file_content = await storage.get_file(p["filename"])
+                if file_content:
+                    ext = Path(p["original_filename"]).suffix
+                    arcname = f"Piece_{p["numero"]}{ext}"
+                    zf.writestr(arcname, file_content)
+            except FileNotFoundError:
+                logger.warning(f"File {p["filename"]} not found for piece {p["id"]}. Skipping.")
     
     zip_buffer.seek(0)
     return StreamingResponse(
@@ -2222,7 +2298,7 @@ async def get_shared_dossier(token: str):
             "title": dossier["title"],
             "description": dossier["description"]
         },
-        "pieces": [PieceResponse(**p) for p in pieces],
+        "pieces": [piece_to_response(p) for p in pieces],
         "chronology": chronology
     }
 
@@ -2244,11 +2320,22 @@ async def get_shared_piece_file(token: str, piece_id: str):
     if not piece:
         raise HTTPException(status_code=404, detail="Piece not found")
     
-    filepath = config.UPLOAD_DIR / piece["filename"]
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+    if piece.get("file_missing"):
+        raise HTTPException(status_code=404, detail="Fichier physique manquant, mais les métadonnées et l'analyse IA sont disponibles.")
+
+    file_content = await storage.get_file(piece["filename"])
+    if not file_content:
+        # This case should ideally not happen if file_missing is correctly set, but as a fallback
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
     
-    return FileResponse(filepath, filename=piece["original_filename"])
+    return StreamingResponse(
+        io.BytesIO(file_content),
+        media_type=piece["content_type"],
+        headers={
+            "Content-Disposition": f"inline; filename=\"{piece[\"original_filename\"]}\"",
+            "Content-Length": str(len(file_content))
+        }
+    )
 
 @api_router.get("/shared/{token}/export/pdf")
 async def get_shared_chronology_pdf(token: str):

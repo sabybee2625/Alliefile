@@ -1114,6 +1114,12 @@ const DossierView = () => {
                                   Doublon
                                 </Badge>
                               )}
+                              {piece.file_missing && (
+                                <Badge variant="outline" className="text-xs bg-orange-100 text-orange-600 border-orange-300">
+                                  <AlertTriangle className="w-3 h-3 mr-1" />
+                                  Fichier manquant
+                                </Badge>
+                              )}
                               {piece.source === 'camera' && (
                                 <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
                                   📷 Photo
@@ -1167,8 +1173,9 @@ const DossierView = () => {
                             onClick={() => handleViewFile(piece)}
                             className="rounded-sm"
                             data-testid={`view-file-${index}`}
+                            disabled={piece.file_missing && !piece.extracted_text}
                           >
-                            <Eye className="w-4 h-4 mr-1" />
+                            {piece.file_missing && !piece.extracted_text ? <FileQuestion className="w-4 h-4 mr-1 text-slate-400" /> : <Eye className="w-4 h-4 mr-1" />}
                             Voir
                           </Button>
                           

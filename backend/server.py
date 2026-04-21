@@ -49,11 +49,34 @@ from storage import get_storage_backend, compute_file_hash, LocalStorage
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
 
-# Use certifi only for Atlas connections (mongodb+srv)
-if config.MONGO_URL.startswith("mongodb+srv"):
-    client = AsyncIOMotorClient(config.MONGO_URL, tlsCAFile=certifi.where())
-else:
-    client = AsyncIOMotorClient(config.MONGO_URL)
+# MongoDB connection with robust error handling
+async def get_database():
+    urls_to_try = [
+        config.MONGO_URL,
+        os.environ.get("MONGO_URL"),
+        "mongodb://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?ssl=true&authSource=admin"
+    ]
+    
+    for url in urls_to_try:
+        if not url: continue
+        try:
+            logger.info(f"Attempting to connect to MongoDB...")
+            if url.startswith("mongodb+srv"):
+                c = AsyncIOMotorClient(url, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+            else:
+                c = AsyncIOMotorClient(url, serverSelectionTimeoutMS=5000)
+            
+            # Test connection
+            await c.admin.command('ping')
+            logger.info("Successfully connected to MongoDB")
+            return c[config.DB_NAME]
+        except Exception as e:
+            logger.error(f"Failed to connect to MongoDB with URL starting with {url[:20]}... : {e}")
+    
+    raise RuntimeError("Could not connect to any MongoDB instance")
+
+# Initialize DB connection
+client = AsyncIOMotorClient(config.MONGO_URL, tlsCAFile=certifi.where() if config.MONGO_URL.startswith("mongodb+srv") else None)
 db = client[config.DB_NAME]
 
 # Create the main app with production settings

@@ -44,11 +44,15 @@ class Config:
         # CORS - Restricted in production
         self.CORS_ORIGINS = self._get_cors_origins()
         
-        # Database - FORCED for restoration
-        self.MONGO_URL = "mongodb+srv://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?retryWrites=true&w=majority"
-        self.DB_NAME = "alliefile"
+        # Database - Use Emergent's local DB by default to avoid connection errors
+        self.MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+        self.DB_NAME = os.environ.get("DB_NAME", "alliefile")
         
-        # Storage - FORCED to GRIDFS
+        # Atlas GridFS - Specifically for file storage restoration
+        self.ATLAS_MONGO_URL = "mongodb+srv://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?retryWrites=true&w=majority"
+        self.ATLAS_DB_NAME = "alliefile"
+        
+        # Storage - Set to GRIDFS to use Atlas for files
         self.STORAGE_BACKEND = StorageBackend.GRIDFS
         self.UPLOAD_DIR = self.ROOT_DIR / "uploads"
         self.EXPORTS_DIR = self.ROOT_DIR / "exports"

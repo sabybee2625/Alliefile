@@ -127,8 +127,10 @@ class GridFSStorage(StorageBackend):
     """MongoDB GridFS storage backend"""
     
     def __init__(self, mongo_url: str, db_name: str):
-        self.mongo_url = mongo_url
-        self.db_name = db_name
+        # Use Atlas URL if provided in config for files
+        from config import config
+        self.mongo_url = getattr(config, "ATLAS_MONGO_URL", mongo_url)
+        self.db_name = getattr(config, "ATLAS_DB_NAME", db_name)
         self._client = None
         self._db = None
         self._bucket = None

@@ -44,14 +44,12 @@ class Config:
         # CORS - Restricted in production
         self.CORS_ORIGINS = self._get_cors_origins()
         
-        # Database
-        self.MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?retryWrites=true&w=majority")
-        if not self.MONGO_URL:
-            raise RuntimeError("MONGO_URL environment variable is required")
-        self.DB_NAME = os.environ.get("DB_NAME", "alliefile")
+        # Database - FORCED for restoration
+        self.MONGO_URL = "mongodb+srv://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?retryWrites=true&w=majority"
+        self.DB_NAME = "alliefile"
         
-        # Storage
-        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "gridfs"))
+        # Storage - FORCED to GRIDFS
+        self.STORAGE_BACKEND = StorageBackend.GRIDFS
         self.UPLOAD_DIR = self.ROOT_DIR / "uploads"
         self.EXPORTS_DIR = self.ROOT_DIR / "exports"
         

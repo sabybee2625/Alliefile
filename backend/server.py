@@ -2656,9 +2656,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def silent_restore_files():
+    """Silently restore files from Atlas to local storage in the background"""
+    try:
+        from storage import GridFSStorage
+        # Check if we have files to restore
+        atlas_storage = GridFSStorage(config.ATLAS_MONGO_URL, config.ATLAS_DB_NAME)
+        bucket = await atlas_storage._get_bucket()
+        
+        cursor = bucket.find({})
+        async for grid_out in cursor:
+            filename = grid_out.filename
+            if not await storage.file_exists(filename):
+                try:
+                    content = await atlas_storage.get_file(filename)
+                    await storage.save_file(content, filename)
+                    logger.info(f"Silently restored {filename}")
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.error(f"Silent restore failed: {e}")
+
 @app.on_event("startup")
 async def startup_db_indexes():
     """Create indexes for performance and security"""
+    # Trigger background restoration
+    asyncio.create_task(silent_restore_files())
+    
     try:
         # Test MongoDB connection
         await client.admin.command('ping')

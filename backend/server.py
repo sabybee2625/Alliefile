@@ -2656,32 +2656,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def silent_restore_files():
-    """Silently restore files from Atlas to local storage in the background"""
-    try:
-        from storage import GridFSStorage
-        # Check if we have files to restore
-        atlas_storage = GridFSStorage(config.ATLAS_MONGO_URL, config.ATLAS_DB_NAME)
-        bucket = await atlas_storage._get_bucket()
-        
-        cursor = bucket.find({})
-        async for grid_out in cursor:
-            filename = grid_out.filename
-            if not await storage.file_exists(filename):
-                try:
-                    content = await atlas_storage.get_file(filename)
-                    await storage.save_file(content, filename)
-                    logger.info(f"Silently restored {filename}")
-                except Exception:
-                    continue
-    except Exception as e:
-        logger.error(f"Silent restore failed: {e}")
+
 
 @app.on_event("startup")
 async def startup_db_indexes():
+    # Temporary migration endpoint
+    @api_router.get("/migrate-from-atlas", summary="Migrate data from Atlas to Emergent DB (ONE-TIME USE)", tags=["Admin"])
+    async def migrate_data_from_atlas():
+        logger.info("Migration endpoint triggered.")
+        try:
+            import subprocess
+            result = subprocess.run(["python3", "backend/migrate_to_emergent.py"], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info(f"Migration script output: {result.stdout}")
+                return {"status": "success", "message": "Migration initiated successfully. Check logs for details.", "output": result.stdout}
+            else:
+                logger.error(f"Migration script failed: {result.stderr}")
+                raise HTTPException(status_code=500, detail=f"Migration failed: {result.stderr}")
+        except Exception as e:
+            logger.error(f"Error triggering migration: {e}")
+            raise HTTPException(status_code=500, detail=f"Error triggering migration: {e}")
+
+
     """Create indexes for performance and security"""
-    # Trigger background restoration
-    asyncio.create_task(silent_restore_files())
+
     
     try:
         # Test MongoDB connection

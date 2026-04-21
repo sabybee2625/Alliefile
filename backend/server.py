@@ -184,10 +184,27 @@ async def get_piece_file_content(piece: Dict[str, Any]) -> bytes:
     if not storage_path:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # 1. Try local storage first (fastest)
     try:
         return await storage.get_file(storage_path)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
+    except Exception:
+        # 2. If local fails, try Atlas GridFS as a fallback
+        try:
+            from storage import GridFSStorage
+            atlas_storage = GridFSStorage(config.ATLAS_MONGO_URL, config.ATLAS_DB_NAME)
+            content = await atlas_storage.get_file(storage_path)
+            
+            # Optional: Save back to local storage to avoid future Atlas calls
+            try:
+                await storage.save_file(content, storage_path)
+                logger.info(f"Restored file {storage_path} from Atlas to local storage")
+            except Exception as e:
+                logger.warning(f"Could not cache file locally: {e}")
+                
+            return content
+        except Exception as e:
+            logger.error(f"Total failure retrieving file {storage_path}: {e}")
+            raise HTTPException(status_code=404, detail="Fichier introuvable (Local & Atlas)")
 
 
 # ===================== MODELS =====================

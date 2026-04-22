@@ -53,7 +53,7 @@ class Config:
         self.ATLAS_DB_NAME = "alliefile"
         
         # Storage - Default to local to avoid startup connection to Atlas
-        self.STORAGE_BACKEND = StorageBackend.LOCAL
+        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "local"))
         self.UPLOAD_DIR = self.ROOT_DIR / "uploads"
         self.EXPORTS_DIR = self.ROOT_DIR / "exports"
         

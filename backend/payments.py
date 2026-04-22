@@ -22,6 +22,13 @@ try:
 except ImportError:
     logger.warning("emergentintegrations not available, Stripe integration disabled")
     STRIPE_AVAILABLE = False
+    
+    # Mock classes for type hinting when emergentintegrations is missing
+    class CheckoutSessionResponse: pass
+    class CheckoutStatusResponse: pass
+    class CheckoutSessionRequest: pass
+    class StripeCheckout:
+        def __init__(self, *args, **kwargs): pass
 
 
 # ===================== PRICING PLANS =====================

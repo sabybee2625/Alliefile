@@ -976,11 +976,11 @@ async def delete_dossier(dossier_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Dossier not found")
     
     pieces = await db.pieces.find({"dossier_id": dossier_id}).to_list(1000)
-        for piece in pieces:
-            try:
-                await storage.delete_file(piece["filename"])
-            except Exception as e:
-                logger.warning(f"Could not delete file {piece["filename"]}: {e}")
+    for piece in pieces:
+        try:
+            await storage.delete_file(piece["filename"])
+        except Exception as e:
+            logger.warning(f"Could not delete file {piece['filename']}: {e}")
 
     
     await db.pieces.delete_many({"dossier_id": dossier_id})
@@ -1030,13 +1030,13 @@ def extract_text_from_doc(file_content: bytes) -> str:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".doc") as temp_file:
             temp_file.write(file_content)
             temp_file_path = Path(temp_file.name)
-        result = subprocess.run([\'antiword\', str(temp_file_path)], capture_output=True, text=True, timeout=30)
+        result = subprocess.run(['antiword', str(temp_file_path)], capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             return result.stdout
     except Exception:
         pass
     finally:
-        if \'temp_file_path\' in locals() and temp_file_path.exists():
+        if 'temp_file_path' in locals() and temp_file_path.exists():
             temp_file_path.unlink()
     return ""
 
@@ -1256,7 +1256,7 @@ async def get_piece_file(piece_id: str, user: dict = Depends(get_current_user)):
         content=content,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{piece["original_filename"]}"'
+            "Content-Disposition": f"attachment; filename='{piece['original_filename']}\""
         }
     )
 
@@ -1281,7 +1281,7 @@ async def preview_piece_file(piece_id: str, user: dict = Depends(get_current_use
         content=content,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'inline; filename="{piece["original_filename"]}"'
+            "Content-Disposition": f"inline; filename='{piece['original_filename']}\""
         }
     )
 
@@ -1621,7 +1621,7 @@ async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     try:
         await storage.delete_file(piece["filename"])
     except Exception as e:
-        logger.warning(f"Could not delete file {piece["filename"]}: {e}")
+        logger.warning(f"Could not delete file {piece['filename']}: {e}")
     
     await db.pieces.delete_one({"id": piece_id})
     return {"message": "Piece deleted"}
@@ -1648,11 +1648,11 @@ async def delete_many_pieces(
         try:
             await storage.delete_file(piece["filename"])
         except Exception as e:
-            logger.warning(f"Could not delete file {piece["filename"]}: {e}")
+            logger.warning(f"Could not delete file {piece['filename']}: {e}")
         await db.pieces.delete_one({"id": piece["id"]})
         deleted_count += 1
     
-    return {"message": f"{deleted_count} pièces supprimées", "deleted_count": deleted_count}
+    return {'message': f'{deleted_count} pièces supprimées', 'deleted_count': deleted_count}
 
 @api_router.post("/dossiers/{dossier_id}/pieces/delete-errors")
 async def delete_error_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
@@ -1671,11 +1671,11 @@ async def delete_error_pieces(dossier_id: str, user: dict = Depends(get_current_
         try:
             await storage.delete_file(piece["filename"])
         except Exception as e:
-            logger.warning(f"Could not delete file {piece["filename"]}: {e}")
+            logger.warning(f"Could not delete file {piece['filename']}: {e}")
         await db.pieces.delete_one({"id": piece["id"]})
         deleted_count += 1
     
-    return {"message": f"{deleted_count} pièces en erreur supprimées", "deleted_count": deleted_count}
+    return {'message': f'{deleted_count} pièces en erreur supprimées', 'deleted_count': deleted_count}
 
 @api_router.post("/dossiers/{dossier_id}/renumber")
 async def renumber_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
@@ -1802,8 +1802,8 @@ async def get_chronology(dossier_id: str, user: dict = Depends(get_current_user)
         if p.get("validated_data"):
             date_doc = p["validated_data"].get("date_document")
             chronology.append({
-                "piece_id": p["id"],
-                "numero": p["numero"],
+                "piece_id": p['id'],
+                "numero": p['numero'],
                 "date": date_doc,
                 "titre": p["validated_data"].get("titre", p["original_filename"]),
                 "resume": {
@@ -1837,7 +1837,7 @@ async def export_csv(dossier_id: str, user: dict = Depends(get_current_user)):
     return StreamingResponse(
         io.StringIO(csv_content),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=sommaire_{dossier_id}.csv"}
+        headers={'Content-Disposition': f'attachment; filename=sommaire_{dossier_id}.csv'}
     )
 
 @api_router.get("/dossiers/{dossier_id}/export/zip")
@@ -1852,19 +1852,19 @@ async def export_zip(dossier_id: str, user: dict = Depends(get_current_user)):
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for p in pieces:
             try:
-                file_content = await storage.get_file(p["filename"])
+                file_content = await storage.get_file(p['filename'])
                 if file_content:
                     ext = Path(p["original_filename"]).suffix
-                    arcname = f"Piece_{p["numero"]}{ext}"
+                    arcname = f"Piece_{p['numero']}{ext}"
                     zf.writestr(arcname, file_content)
             except FileNotFoundError:
-                logger.warning(f"File {p["filename"]} not found for piece {p["id"]}. Skipping.")
+                logger.warning(f"File {p['filename']} not found for piece {p['id']}. Skipping.")
     
     zip_buffer.seek(0)
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=dossier_{dossier_id}.zip"}
+        headers={'Content-Disposition': f'attachment; filename=dossier_{dossier_id}.zip'}
     )
 
 # ===================== PDF EXPORT =====================
@@ -1906,7 +1906,7 @@ async def export_chronology_pdf(dossier_id: str, user: dict = Depends(get_curren
     for p in pieces:
         if p.get("validated_data"):
             chronology.append({
-                "numero": p["numero"],
+                "numero": p['numero'],
                 "date": p["validated_data"].get("date_document"),
                 "titre": p["validated_data"].get("titre", p["original_filename"]),
                 "type_piece": p["validated_data"].get("type_piece", "autre"),
@@ -1969,7 +1969,7 @@ async def export_chronology_pdf(dossier_id: str, user: dict = Depends(get_curren
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=chronologie_{dossier_id}.pdf"}
+        headers={'Content-Disposition': f'attachment; filename=chronologie_{dossier_id}.pdf'}
     )
 
 @api_router.get("/dossiers/{dossier_id}/export/docx")
@@ -1990,7 +1990,7 @@ async def export_chronology_docx(dossier_id: str, user: dict = Depends(get_curre
     for p in pieces:
         if p.get("validated_data"):
             chronology.append({
-                "numero": p["numero"],
+                "numero": p['numero'],
                 "date": p["validated_data"].get("date_document"),
                 "titre": p["validated_data"].get("titre", p["original_filename"]),
                 "type_piece": p["validated_data"].get("type_piece", "autre"),
@@ -2056,7 +2056,7 @@ async def export_chronology_docx(dossier_id: str, user: dict = Depends(get_curre
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename=chronologie_narrative_{dossier_id}.docx"}
+        headers={'Content-Disposition': f'attachment; filename=chronologie_narrative_{dossier_id}.docx'}
     )
 
 # ===================== ASSISTANT DE RÉDACTION =====================
@@ -2135,8 +2135,8 @@ async def generate_document(dossier_id: str, request: AssistantRequest, user: di
     for p in pieces:
         vd = p.get("validated_data", {})
         if vd:
-            pieces_used.append(p["numero"])
-            entry = f"""
+            pieces_used.append(p['numero'])
+            entry = f""""
 Pièce {p['numero']} - {vd.get('titre', p['original_filename'])}:
 - Type: {vd.get('type_piece', 'non défini')}
 - Date: {format_date_fr(vd.get('date_document'))}
@@ -2164,7 +2164,7 @@ Pièce {p['numero']} - {vd.get('titre', p['original_filename'])}:
     
     # Document type prompts (agnostique du contentieux)
     prompts = {
-        "expose_faits": f"""À partir des informations VALIDÉES suivantes, rédige un exposé des faits structuré et chronologique.
+        "expose_faits": f"""À partir des informations VALIDÉES suivantes, rédige un exposé des faits structuré et chronologique."
 
 RÈGLES STRICTES:
 - N'invente AUCUNE information
@@ -2177,7 +2177,7 @@ Pièces validées:
 
 Rédige l'exposé des faits:""",
         
-        "chronologie_narrative": f"""À partir des informations VALIDÉES suivantes, rédige une chronologie narrative.
+        "chronologie_narrative": f"""À partir des informations VALIDÉES suivantes, rédige une chronologie narrative."
 
 RÈGLES STRICTES:
 - Un paragraphe par événement
@@ -2190,7 +2190,7 @@ Pièces validées:
 
 Rédige la chronologie narrative:""",
         
-        "courrier_avocat": f"""À partir des informations VALIDÉES suivantes, rédige un projet de courrier pour un avocat présentant la situation.
+        "courrier_avocat": f"""À partir des informations VALIDÉES suivantes, rédige un projet de courrier pour un avocat présentant la situation."
 
 RÈGLES STRICTES:
 - Chaque fait cité doit référencer sa source: (Pièce X)
@@ -2203,7 +2203,7 @@ Pièces validées:
 
 Rédige le projet de courrier:""",
         
-        "projet_requete": f"""À partir des informations VALIDÉES suivantes, rédige un projet de requête.
+        "projet_requete": f"""À partir des informations VALIDÉES suivantes, rédige un projet de requête."
 
 JURIDICTION CIBLÉE: {jurisdiction_label}
 
@@ -2324,7 +2324,7 @@ async def get_shared_dossier(token: str):
     for p in pieces:
         if p.get("status") == "pret" and p.get("validated_data"):
             chronology.append({
-                "numero": p["numero"],
+                "numero": p['numero'],
                 "date": p["validated_data"].get("date_document"),
                 "titre": p["validated_data"].get("titre", p["original_filename"]),
                 "type_piece": p["validated_data"].get("type_piece"),
@@ -2372,7 +2372,7 @@ async def get_shared_piece_file(token: str, piece_id: str):
         io.BytesIO(file_content),
         media_type=piece["content_type"],
         headers={
-            "Content-Disposition": f"inline; filename=\"{piece[\"original_filename\"]}\"",
+            "Content-Disposition": f"inline; filename='{piece['original_filename']}\"",
             "Content-Length": str(len(file_content))
         }
     )
@@ -2405,7 +2405,7 @@ async def get_shared_chronology_pdf(token: str):
     for p in pieces:
         if p.get("validated_data"):
             chronology.append({
-                "numero": p["numero"],
+                "numero": p['numero'],
                 "date": p["validated_data"].get("date_document"),
                 "titre": p["validated_data"].get("titre", p["original_filename"]),
                 "resume": p["validated_data"]
@@ -2449,7 +2449,7 @@ async def get_shared_chronology_pdf(token: str):
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=chronologie.pdf"}
+        headers={'Content-Disposition': f'attachment; filename=chronologie.pdf'}
     )
 
 # ===================== ROOT ROUTES =====================

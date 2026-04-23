@@ -1580,6 +1580,129 @@ async def reupload_piece_file(
     updated["file_missing"] = False
     return PieceResponse(**updated)
 
+@api_router.post("/dossiers/{dossier_id}/bulk-reupload")
+async def bulk_reupload_pieces(
+    dossier_id: str,
+    files: List[UploadFile] = File(...),
+    user: dict = Depends(get_current_user)
+):
+    """Bulk re-upload: drop multiple files, auto-match to missing pieces by original filename."""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    # Get all pieces with missing files in this dossier
+    all_pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0}).to_list(1000)
+    missing_pieces = []
+    for p in all_pieces:
+        if not await storage.file_exists(p["filename"]):
+            missing_pieces.append(p)
+    
+    if not missing_pieces:
+        return {"matched": 0, "unmatched": [f.filename for f in files], "message": "Aucune pièce manquante dans ce dossier"}
+    
+    # Build lookup by original_filename (normalized: lowercase, stripped)
+    by_name = {}
+    for p in missing_pieces:
+        key = p["original_filename"].strip().lower()
+        by_name[key] = p
+    
+    matched = 0
+    unmatched_files = []
+    restored_pieces = []
+    
+    for upload_file in files:
+        content = await upload_file.read()
+        file_size = len(content)
+        fname = (upload_file.filename or "").strip().lower()
+        
+        # Try exact match
+        piece = by_name.get(fname)
+        
+        # Try match without extension differences (e.g. file.PDF vs file.pdf)
+        if not piece:
+            for key, p in by_name.items():
+                if Path(key).stem == Path(fname).stem:
+                    piece = p
+                    break
+        
+        if piece:
+            ext = Path(upload_file.filename).suffix.lower() if upload_file.filename else Path(piece["original_filename"]).suffix.lower()
+            new_filename = f"{piece['id']}{ext}"
+            
+            # Handle HEIC
+            if ext in ('.heic', '.heif'):
+                try:
+                    from PIL import Image
+                    from pillow_heif import register_heif_opener
+                    register_heif_opener()
+                    img = Image.open(io.BytesIO(content))
+                    jpg_buffer = io.BytesIO()
+                    img.convert('RGB').save(jpg_buffer, 'JPEG', quality=95)
+                    content = jpg_buffer.getvalue()
+                    new_filename = f"{piece['id']}.jpg"
+                    file_size = len(content)
+                except Exception as e:
+                    logger.error(f"HEIC conversion error: {e}")
+            
+            await storage.save_file(content, new_filename)
+            file_hash = compute_file_hash(content)
+            
+            await db.pieces.update_one(
+                {"id": piece["id"]},
+                {"$set": {
+                    "filename": new_filename,
+                    "file_size": file_size,
+                    "file_hash": file_hash,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            matched += 1
+            restored_pieces.append({
+                "piece_id": piece["id"],
+                "original_filename": piece["original_filename"],
+                "numero": piece["numero"],
+                "matched_with": upload_file.filename
+            })
+            # Remove from lookup so we don't match twice
+            key_to_remove = piece["original_filename"].strip().lower()
+            by_name.pop(key_to_remove, None)
+        else:
+            unmatched_files.append(upload_file.filename)
+    
+    still_missing = [{"piece_id": p["id"], "original_filename": p["original_filename"], "numero": p["numero"]} for p in by_name.values()]
+    
+    return {
+        "matched": matched,
+        "restored": restored_pieces,
+        "unmatched_files": unmatched_files,
+        "still_missing": still_missing,
+        "total_missing_before": len(missing_pieces),
+        "total_missing_after": len(still_missing)
+    }
+
+@api_router.get("/dossiers/{dossier_id}/missing-pieces")
+async def get_missing_pieces(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Get list of pieces with missing files in a dossier"""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    
+    pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0, "extracted_text": 0}).to_list(1000)
+    missing = []
+    for p in pieces:
+        if not await storage.file_exists(p["filename"]):
+            missing.append({
+                "piece_id": p["id"],
+                "numero": p["numero"],
+                "original_filename": p["original_filename"],
+                "file_type": p["file_type"],
+                "validated_titre": p.get("validated_data", {}).get("titre", "") if p.get("validated_data") else "",
+                "ai_titre": p.get("ai_proposal", {}).get("titre", "") if p.get("ai_proposal") else ""
+            })
+    return {"missing_count": len(missing), "missing_pieces": missing}
+
 @api_router.delete("/pieces/{piece_id}")
 async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):
     piece = await db.pieces.find_one({"id": piece_id})

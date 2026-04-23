@@ -128,8 +128,11 @@ const DossierView = () => {
   const piecesListRef = useRef(null);
   const tabsRef = useRef(null);
   const reuploadInputRef = useRef(null);
+  const bulkReuploadInputRef = useRef(null);
   const [reuploadTarget, setReuploadTarget] = useState(null);
   const [reuploading, setReuploading] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -611,6 +614,31 @@ const DossierView = () => {
     }
   };
 
+  const handleBulkReupload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    setBulkUploading(true);
+    setBulkResult(null);
+    try {
+      const res = await piecesApi.bulkReupload(id, files);
+      const result = res.data;
+      setBulkResult(result);
+      if (result.matched > 0) {
+        toast.success(`${result.matched} fichier${result.matched > 1 ? 's' : ''} restauré${result.matched > 1 ? 's' : ''} automatiquement !`);
+      }
+      if (result.unmatched_files?.length > 0) {
+        toast.warning(`${result.unmatched_files.length} fichier${result.unmatched_files.length > 1 ? 's' : ''} non reconnu${result.unmatched_files.length > 1 ? 's' : ''}`);
+      }
+      fetchData();
+    } catch (err) {
+      toast.error('Erreur lors du ré-upload en masse');
+    } finally {
+      setBulkUploading(false);
+      e.target.value = '';
+    }
+  };
+
   // Export chronology for selected pieces only
   const handleExportSelectedChronology = async () => {
     const selectedValidatedPieces = pieces
@@ -700,19 +728,82 @@ const DossierView = () => {
         onChange={handleReuploadFile}
         accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.heic,.heif"
       />
+      <input
+        type="file"
+        ref={bulkReuploadInputRef}
+        className="hidden"
+        onChange={handleBulkReupload}
+        multiple
+        accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.heic,.heif"
+      />
       
       <div className="space-y-6">
-        {/* Missing files alert */}
+        {/* Missing files alert with bulk re-upload */}
         {missingFileCount > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-sm p-4 flex items-start gap-3" data-testid="missing-files-alert">
-            <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-medium text-red-800">
-                {missingFileCount} fichier{missingFileCount > 1 ? 's' : ''} manquant{missingFileCount > 1 ? 's' : ''}
-              </p>
-              <p className="text-sm text-red-600 mt-1">
-                Ces fichiers ont été perdus lors d'un redéploiement. Cliquez sur "Ré-uploader" sur chaque pièce pour les remplacer. Les métadonnées et analyses sont préservées.
-              </p>
+          <div className="bg-red-50 border border-red-200 rounded-sm p-5" data-testid="missing-files-alert">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium text-red-800">
+                  {missingFileCount} fichier{missingFileCount > 1 ? 's' : ''} manquant{missingFileCount > 1 ? 's' : ''}
+                </p>
+                <p className="text-sm text-red-600 mt-1">
+                  Ces fichiers ont été perdus lors d'une mise à jour. Déposez tous vos fichiers originaux ci-dessous — le système les replacera automatiquement au bon endroit.
+                </p>
+                
+                <div className="mt-3">
+                  <Button
+                    onClick={() => bulkReuploadInputRef.current?.click()}
+                    disabled={bulkUploading}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    data-testid="bulk-reupload-btn"
+                  >
+                    {bulkUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Restauration en cours...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-4 h-4 mr-2" />
+                        Déposer tous les fichiers d'un coup
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-red-500 mt-2">
+                    Sélectionnez tous vos fichiers. Le système les reconnaît par leur nom original.
+                  </p>
+                </div>
+                
+                {/* Bulk result */}
+                {bulkResult && (
+                  <div className="mt-3 p-3 bg-white rounded border border-red-100 text-sm">
+                    {bulkResult.matched > 0 && (
+                      <p className="text-green-700 flex items-center gap-1">
+                        <CheckCircle className="w-4 h-4" />
+                        {bulkResult.matched} fichier{bulkResult.matched > 1 ? 's' : ''} restauré{bulkResult.matched > 1 ? 's' : ''}
+                      </p>
+                    )}
+                    {bulkResult.unmatched_files?.length > 0 && (
+                      <div className="text-amber-700 mt-1">
+                        <p className="flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {bulkResult.unmatched_files.length} fichier{bulkResult.unmatched_files.length > 1 ? 's' : ''} non reconnu{bulkResult.unmatched_files.length > 1 ? 's' : ''} :
+                        </p>
+                        <ul className="ml-5 mt-1 text-xs list-disc">
+                          {bulkResult.unmatched_files.slice(0, 5).map((f, i) => <li key={i}>{f}</li>)}
+                          {bulkResult.unmatched_files.length > 5 && <li>...et {bulkResult.unmatched_files.length - 5} autres</li>}
+                        </ul>
+                      </div>
+                    )}
+                    {bulkResult.total_missing_after > 0 && (
+                      <p className="text-red-600 mt-1 text-xs">
+                        {bulkResult.total_missing_after} pièce{bulkResult.total_missing_after > 1 ? 's' : ''} encore sans fichier — utilisez le bouton "Ré-uploader" sur chaque pièce.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

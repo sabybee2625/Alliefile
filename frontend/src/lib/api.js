@@ -119,6 +119,14 @@ export const piecesApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  bulkReupload: async (dossierId, files) => {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    return api.post(`/dossiers/${dossierId}/bulk-reupload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  getMissingPieces: (dossierId) => api.get(`/dossiers/${dossierId}/missing-pieces`),
   // File access with auth
   getFileUrl: (id) => `${API_URL}/pieces/${id}/file`,
   getPreviewUrl: (id) => `${API_URL}/pieces/${id}/preview`,

@@ -2634,27 +2634,22 @@ async def migrate_uploads_to_gridfs():
     }
 
 @api_router.get("/recover-from-atlas")
-async def recover_files_from_atlas():
-    """Temporary endpoint - Recover files from Atlas GridFS to current DB GridFS.
-    Copies files that exist in Atlas but are missing in current GridFS."""
+async def recover_files_from_atlas(batch_size: int = Query(10, description="Files per batch")):
+    """Temporary - Recover files from Atlas GridFS in batches. Call repeatedly until done."""
     import certifi
     from motor.motor_asyncio import AsyncIOMotorClient as AtlasClient, AsyncIOMotorGridFSBucket
     
     atlas_url = "mongodb+srv://forsaby_db_user:Alliefile2026Secure@alliefile-dossier.u4ejts9.mongodb.net/?retryWrites=true&w=majority"
-    atlas_db_name = "alliefile"
     
-    # Connect to Atlas
     try:
-        atlas_client = AtlasClient(atlas_url, tlsCAFile=certifi.where())
-        atlas_db = atlas_client[atlas_db_name]
+        atlas_client = AtlasClient(atlas_url, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=10000)
+        atlas_db = atlas_client["alliefile"]
         atlas_bucket = AsyncIOMotorGridFSBucket(atlas_db, bucket_name="file_storage")
     except Exception as e:
         return {"error": f"Cannot connect to Atlas: {str(e)}"}
     
-    # Current DB GridFS
     current_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="file_storage")
     
-    # Get missing files (referenced by pieces but not in current GridFS)
     pieces = await db.pieces.find({}, {"filename": 1, "_id": 0}).to_list(100000)
     referenced = {p["filename"] for p in pieces}
     
@@ -2662,44 +2657,31 @@ async def recover_files_from_atlas():
     async for f in current_bucket.find({}):
         current_files.add(f.filename)
     
-    missing = referenced - current_files
+    missing = list(referenced - current_files)
+    batch = missing[:batch_size]
     
-    # Try to recover from Atlas
     recovered = 0
-    not_in_atlas = []
-    errors = 0
+    not_in_atlas = 0
     
-    for filename in missing:
+    for filename in batch:
         try:
-            # Check if file exists in Atlas GridFS
-            atlas_stream = await atlas_bucket.open_download_stream_by_name(filename)
-            content = await atlas_stream.read()
-            
-            # Upload to current GridFS
+            stream = await atlas_bucket.open_download_stream_by_name(filename)
+            content = await stream.read()
             await current_bucket.upload_from_stream(filename, content)
             recovered += 1
         except Exception:
-            not_in_atlas.append(filename)
+            not_in_atlas += 1
     
     atlas_client.close()
     
-    # Re-check missing count
-    still_missing = []
-    for fn in referenced:
-        found = False
-        async for _ in current_bucket.find({"filename": fn}):
-            found = True
-            break
-        if not found:
-            still_missing.append(fn)
-    
+    remaining = len(missing) - recovered
     return {
-        "total_missing_before": len(missing),
-        "recovered_from_atlas": recovered,
-        "not_found_in_atlas": len(not_in_atlas),
-        "still_missing": len(still_missing),
-        "still_missing_files": still_missing,
-        "status": "OK" if len(still_missing) == 0 else "PARTIAL_RECOVERY"
+        "total_missing": len(missing),
+        "batch_processed": len(batch),
+        "recovered": recovered,
+        "not_in_atlas": not_in_atlas,
+        "still_missing": remaining,
+        "status": "DONE" if remaining == 0 else "CALL_AGAIN"
     }
 
 # Include router

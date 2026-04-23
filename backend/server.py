@@ -1586,7 +1586,12 @@ async def bulk_reupload_pieces(
     files: List[UploadFile] = File(...),
     user: dict = Depends(get_current_user)
 ):
-    """Bulk re-upload: drop multiple files, auto-match to missing pieces by original filename."""
+    """Bulk re-upload: drop multiple files, auto-match to missing pieces.
+    Matching strategy (in order):
+    1. Exact original filename match
+    2. Content hash match (same file, different name)
+    3. Stem match (filename without extension)
+    """
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
@@ -1599,79 +1604,122 @@ async def bulk_reupload_pieces(
             missing_pieces.append(p)
     
     if not missing_pieces:
-        return {"matched": 0, "unmatched": [f.filename for f in files], "message": "Aucune pièce manquante dans ce dossier"}
+        return {"matched": 0, "unmatched_files": [f.filename for f in files], "message": "Aucune pièce manquante dans ce dossier"}
     
-    # Build lookup by original_filename (normalized: lowercase, stripped)
-    by_name = {}
+    # Build lookups
+    by_name = {}      # original_filename (lowercase) -> piece
+    by_hash = {}      # file_hash -> piece
+    by_stem = {}      # filename stem (no ext, lowercase) -> piece
+    remaining = {}    # piece_id -> piece (for tracking unmatched)
+    
     for p in missing_pieces:
-        key = p["original_filename"].strip().lower()
-        by_name[key] = p
+        pid = p["id"]
+        remaining[pid] = p
+        name_key = p["original_filename"].strip().lower()
+        by_name[name_key] = p
+        stem_key = Path(name_key).stem
+        if stem_key not in by_stem:
+            by_stem[stem_key] = p
+        if p.get("file_hash"):
+            by_hash[p["file_hash"]] = p
+    
+    # Read all uploaded files first (we need content for hash matching)
+    uploaded = []
+    for upload_file in files:
+        content = await upload_file.read()
+        uploaded.append({
+            "filename": upload_file.filename or "",
+            "content": content,
+            "hash": compute_file_hash(content),
+            "size": len(content)
+        })
     
     matched = 0
     unmatched_files = []
     restored_pieces = []
     
-    for upload_file in files:
-        content = await upload_file.read()
-        file_size = len(content)
-        fname = (upload_file.filename or "").strip().lower()
+    async def save_match(piece, ufile, match_method):
+        nonlocal matched
+        content = ufile["content"]
+        file_size = ufile["size"]
+        ext = Path(ufile["filename"]).suffix.lower() if ufile["filename"] else Path(piece["original_filename"]).suffix.lower()
+        new_filename = f"{piece['id']}{ext}"
         
-        # Try exact match
-        piece = by_name.get(fname)
+        # Handle HEIC
+        if ext in ('.heic', '.heif'):
+            try:
+                from PIL import Image
+                from pillow_heif import register_heif_opener
+                register_heif_opener()
+                img = Image.open(io.BytesIO(content))
+                jpg_buffer = io.BytesIO()
+                img.convert('RGB').save(jpg_buffer, 'JPEG', quality=95)
+                content = jpg_buffer.getvalue()
+                new_filename = f"{piece['id']}.jpg"
+                file_size = len(content)
+            except Exception as e:
+                logger.error(f"HEIC conversion error: {e}")
         
-        # Try match without extension differences (e.g. file.PDF vs file.pdf)
-        if not piece:
-            for key, p in by_name.items():
-                if Path(key).stem == Path(fname).stem:
-                    piece = p
-                    break
+        await storage.save_file(content, new_filename)
+        file_hash = compute_file_hash(content)
         
-        if piece:
-            ext = Path(upload_file.filename).suffix.lower() if upload_file.filename else Path(piece["original_filename"]).suffix.lower()
-            new_filename = f"{piece['id']}{ext}"
-            
-            # Handle HEIC
-            if ext in ('.heic', '.heif'):
-                try:
-                    from PIL import Image
-                    from pillow_heif import register_heif_opener
-                    register_heif_opener()
-                    img = Image.open(io.BytesIO(content))
-                    jpg_buffer = io.BytesIO()
-                    img.convert('RGB').save(jpg_buffer, 'JPEG', quality=95)
-                    content = jpg_buffer.getvalue()
-                    new_filename = f"{piece['id']}.jpg"
-                    file_size = len(content)
-                except Exception as e:
-                    logger.error(f"HEIC conversion error: {e}")
-            
-            await storage.save_file(content, new_filename)
-            file_hash = compute_file_hash(content)
-            
-            await db.pieces.update_one(
-                {"id": piece["id"]},
-                {"$set": {
-                    "filename": new_filename,
-                    "file_size": file_size,
-                    "file_hash": file_hash,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }}
-            )
-            
-            matched += 1
-            restored_pieces.append({
-                "piece_id": piece["id"],
-                "original_filename": piece["original_filename"],
-                "numero": piece["numero"],
-                "matched_with": upload_file.filename
-            })
-            # Remove from lookup so we don't match twice
-            key_to_remove = piece["original_filename"].strip().lower()
-            by_name.pop(key_to_remove, None)
-        else:
-            unmatched_files.append(upload_file.filename)
+        await db.pieces.update_one(
+            {"id": piece["id"]},
+            {"$set": {
+                "filename": new_filename,
+                "file_size": file_size,
+                "file_hash": file_hash,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        matched += 1
+        restored_pieces.append({
+            "piece_id": piece["id"],
+            "original_filename": piece["original_filename"],
+            "numero": piece["numero"],
+            "matched_with": ufile["filename"],
+            "match_method": match_method
+        })
+        # Remove from all lookups
+        remaining.pop(piece["id"], None)
+        name_key = piece["original_filename"].strip().lower()
+        by_name.pop(name_key, None)
+        stem_key = Path(name_key).stem
+        by_stem.pop(stem_key, None)
+        if piece.get("file_hash"):
+            by_hash.pop(piece["file_hash"], None)
     
-    still_missing = [{"piece_id": p["id"], "original_filename": p["original_filename"], "numero": p["numero"]} for p in by_name.values()]
+    # Pass 1: Exact filename match
+    still_to_match = []
+    for ufile in uploaded:
+        fname = ufile["filename"].strip().lower()
+        piece = by_name.get(fname)
+        if piece and piece["id"] in remaining:
+            await save_match(piece, ufile, "nom_exact")
+        else:
+            still_to_match.append(ufile)
+    
+    # Pass 2: Content hash match (handles renamed files)
+    still_to_match2 = []
+    for ufile in still_to_match:
+        piece = by_hash.get(ufile["hash"])
+        if piece and piece["id"] in remaining:
+            await save_match(piece, ufile, "contenu_identique")
+        else:
+            still_to_match2.append(ufile)
+    
+    # Pass 3: Stem match (filename without extension)
+    for ufile in still_to_match2:
+        fname = ufile["filename"].strip().lower()
+        stem = Path(fname).stem
+        piece = by_stem.get(stem)
+        if piece and piece["id"] in remaining:
+            await save_match(piece, ufile, "nom_approchant")
+        else:
+            unmatched_files.append(ufile["filename"])
+    
+    still_missing = [{"piece_id": p["id"], "original_filename": p["original_filename"], "numero": p["numero"]} for p in remaining.values()]
     
     return {
         "matched": matched,

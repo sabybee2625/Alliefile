@@ -782,6 +782,9 @@ const DossierView = () => {
                       <p className="text-green-700 flex items-center gap-1">
                         <CheckCircle className="w-4 h-4" />
                         {bulkResult.matched} fichier{bulkResult.matched > 1 ? 's' : ''} restauré{bulkResult.matched > 1 ? 's' : ''}
+                        {bulkResult.restored?.some(r => r.match_method === 'contenu_identique') && (
+                          <span className="text-xs text-green-600 ml-1">(dont certains reconnus par contenu malgré un nom différent)</span>
+                        )}
                       </p>
                     )}
                     {bulkResult.unmatched_files?.length > 0 && (

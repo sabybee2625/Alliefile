@@ -2633,16 +2633,39 @@ async def migrate_uploads_to_gridfs():
         "status": "OK" if len(missing_in_gridfs) == 0 else "MISSING_FILES"
     }
 
-@api_router.get("/recover-from-atlas")
-async def recover_files_from_atlas(batch_size: int = Query(10, description="Files per batch")):
-    """Temporary - Recover files from Atlas GridFS in batches. Call repeatedly until done."""
+@api_router.get("/test-atlas")
+async def test_atlas_connection():
+    """Test if Atlas is reachable from this environment"""
     import certifi
     from motor.motor_asyncio import AsyncIOMotorClient as AtlasClient, AsyncIOMotorGridFSBucket
     
     atlas_url = "mongodb+srv://forsaby_db_user:Alliefile2026Secure@alliefile-dossier.u4ejts9.mongodb.net/?retryWrites=true&w=majority"
     
     try:
-        atlas_client = AtlasClient(atlas_url, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=10000)
+        atlas_client = AtlasClient(atlas_url, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        result = await atlas_client.admin.command("ping")
+        
+        atlas_db = atlas_client["alliefile"]
+        bucket = AsyncIOMotorGridFSBucket(atlas_db, bucket_name="file_storage")
+        count = 0
+        async for _ in bucket.find({}):
+            count += 1
+        
+        atlas_client.close()
+        return {"atlas_reachable": True, "ping": result, "gridfs_files": count}
+    except Exception as e:
+        return {"atlas_reachable": False, "error": str(e)}
+
+@api_router.get("/recover-from-atlas")
+async def recover_files_from_atlas(batch_size: int = Query(3, description="Files per batch")):
+    """Recover files from Atlas GridFS in small batches."""
+    import certifi
+    from motor.motor_asyncio import AsyncIOMotorClient as AtlasClient, AsyncIOMotorGridFSBucket
+    
+    atlas_url = "mongodb+srv://forsaby_db_user:Alliefile2026Secure@alliefile-dossier.u4ejts9.mongodb.net/?retryWrites=true&w=majority"
+    
+    try:
+        atlas_client = AtlasClient(atlas_url, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
         atlas_db = atlas_client["alliefile"]
         atlas_bucket = AsyncIOMotorGridFSBucket(atlas_db, bucket_name="file_storage")
     except Exception as e:

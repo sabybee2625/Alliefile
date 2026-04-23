@@ -2565,6 +2565,74 @@ async def migrate_local_to_gridfs(user: dict = Depends(get_current_user)):
     
     return {"migrated": migrated, "already_existed": already, "errors": errors}
 
+@api_router.get("/migrate-uploads")
+async def migrate_uploads_to_gridfs():
+    """Temporary endpoint - Migrate all local files from uploads/ to GridFS.
+    Call once after deployment, then remove this endpoint."""
+    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+    
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name="file_storage")
+    upload_dir = config.UPLOAD_DIR
+    
+    if not upload_dir.exists():
+        return {"message": "No uploads directory found", "migrated": 0, "errors": 0}
+    
+    # Get already migrated filenames
+    existing = set()
+    async for f in bucket.find({}):
+        existing.add(f.filename)
+    
+    local_files = [f for f in upload_dir.iterdir() if f.is_file()]
+    migrated = 0
+    already_existed = 0
+    errors = 0
+    error_details = []
+    
+    for filepath in sorted(local_files):
+        if filepath.name in existing:
+            already_existed += 1
+            continue
+        try:
+            with open(filepath, 'rb') as f:
+                content = f.read()
+            await bucket.upload_from_stream(filepath.name, content)
+            migrated += 1
+        except Exception as e:
+            errors += 1
+            error_details.append({"file": filepath.name, "error": str(e)})
+    
+    # Verify total
+    total_gridfs = 0
+    async for _ in bucket.find({}):
+        total_gridfs += 1
+    
+    # Count pieces in DB
+    total_pieces = await db.pieces.count_documents({})
+    pieces = await db.pieces.find({}, {"filename": 1, "_id": 0}).to_list(100000)
+    referenced = {p["filename"] for p in pieces}
+    
+    # Check coverage
+    missing_in_gridfs = []
+    for fn in referenced:
+        found = False
+        async for _ in bucket.find({"filename": fn}):
+            found = True
+            break
+        if not found:
+            missing_in_gridfs.append(fn)
+    
+    return {
+        "migrated": migrated,
+        "already_existed": already_existed,
+        "errors": errors,
+        "error_details": error_details[:10],
+        "total_in_gridfs": total_gridfs,
+        "total_pieces_in_db": total_pieces,
+        "referenced_files": len(referenced),
+        "missing_files": missing_in_gridfs,
+        "status": "OK" if len(missing_in_gridfs) == 0 else "MISSING_FILES"
+    }
+
 # Include router
 app.include_router(api_router)
 

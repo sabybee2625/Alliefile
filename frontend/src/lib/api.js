@@ -112,6 +112,13 @@ export const piecesApi = {
   delete: (id) => api.delete(`/pieces/${id}`),
   deleteMany: (dossierId, pieceIds) => api.post(`/dossiers/${dossierId}/pieces/delete-many`, { piece_ids: pieceIds }),
   deleteErrors: (dossierId) => api.post(`/dossiers/${dossierId}/pieces/delete-errors`),
+  reupload: async (pieceId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/pieces/${pieceId}/reupload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   // File access with auth
   getFileUrl: (id) => `${API_URL}/pieces/${id}/file`,
   getPreviewUrl: (id) => `${API_URL}/pieces/${id}/preview`,

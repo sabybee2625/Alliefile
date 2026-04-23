@@ -64,6 +64,7 @@ import {
   X,
   Tag,
   ChevronDown,
+  UploadCloud,
 } from 'lucide-react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { PieceValidationModal } from '../components/PieceValidationModal';
@@ -126,6 +127,9 @@ const DossierView = () => {
   // Ref for scrolling to pieces list
   const piecesListRef = useRef(null);
   const tabsRef = useRef(null);
+  const reuploadInputRef = useRef(null);
+  const [reuploadTarget, setReuploadTarget] = useState(null);
+  const [reuploading, setReuploading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -577,7 +581,34 @@ const DossierView = () => {
   };
 
   const handleViewFile = async (piece) => {
+    if (piece.file_missing) {
+      toast.error('Fichier manquant — veuillez ré-uploader ce document');
+      return;
+    }
     setPreviewPiece(piece);
+  };
+
+  const handleReupload = (pieceId) => {
+    setReuploadTarget(pieceId);
+    reuploadInputRef.current?.click();
+  };
+
+  const handleReuploadFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !reuploadTarget) return;
+    
+    setReuploading(true);
+    try {
+      await piecesApi.reupload(reuploadTarget, file);
+      toast.success('Fichier ré-uploadé avec succès');
+      fetchData();
+    } catch (err) {
+      toast.error('Erreur lors du ré-upload');
+    } finally {
+      setReuploading(false);
+      setReuploadTarget(null);
+      e.target.value = '';
+    }
   };
 
   // Export chronology for selected pieces only
@@ -646,6 +677,7 @@ const DossierView = () => {
   const readyCount = pieces.filter((p) => p.status === 'pret').length;
   const errorCount = pieces.filter((p) => p.analysis_status === 'error').length;
   const duplicateCount = pieces.filter((p) => p.is_duplicate).length;
+  const missingFileCount = pieces.filter((p) => p.file_missing).length;
   
   // Count pieces actually eligible for analysis (not queued, not analyzing, not complete)
   const eligibleForAnalysis = pieces.filter((p) => {
@@ -660,7 +692,31 @@ const DossierView = () => {
 
   return (
     <Layout>
+      {/* Hidden re-upload input */}
+      <input
+        type="file"
+        ref={reuploadInputRef}
+        className="hidden"
+        onChange={handleReuploadFile}
+        accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.heic,.heif"
+      />
+      
       <div className="space-y-6">
+        {/* Missing files alert */}
+        {missingFileCount > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-sm p-4 flex items-start gap-3" data-testid="missing-files-alert">
+            <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-red-800">
+                {missingFileCount} fichier{missingFileCount > 1 ? 's' : ''} manquant{missingFileCount > 1 ? 's' : ''}
+              </p>
+              <p className="text-sm text-red-600 mt-1">
+                Ces fichiers ont été perdus lors d'un redéploiement. Cliquez sur "Ré-uploader" sur chaque pièce pour les remplacer. Les métadonnées et analyses sont préservées.
+              </p>
+            </div>
+          </div>
+        )}
+        
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
@@ -1076,7 +1132,7 @@ const DossierView = () => {
                     key={piece.id}
                     className={`border-slate-200 card-hover animate-fade-in ${
                       selectedPieces.includes(piece.id) ? 'ring-2 ring-sky-500 border-sky-500' : ''
-                    } ${piece.is_duplicate ? 'border-amber-300 bg-amber-50/50' : ''}`}
+                    } ${piece.is_duplicate ? 'border-amber-300 bg-amber-50/50' : ''} ${piece.file_missing ? 'border-red-300 bg-red-50/30' : ''}`}
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <CardContent className="py-4">
@@ -1117,6 +1173,12 @@ const DossierView = () => {
                               {piece.source === 'camera' && (
                                 <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
                                   📷 Photo
+                                </Badge>
+                              )}
+                              {piece.file_missing && (
+                                <Badge variant="outline" className="text-xs bg-red-100 text-red-700 border-red-300" data-testid={`file-missing-badge-${piece.id}`}>
+                                  <AlertTriangle className="w-3 h-3 mr-1" />
+                                  Fichier manquant
                                 </Badge>
                               )}
                             </div>
@@ -1160,17 +1222,38 @@ const DossierView = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {/* View File Button */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleViewFile(piece)}
-                            className="rounded-sm"
-                            data-testid={`view-file-${index}`}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Voir
-                          </Button>
+                          {/* Re-upload Button (when file missing) */}
+                          {piece.file_missing ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleReupload(piece.id)}
+                              disabled={reuploading && reuploadTarget === piece.id}
+                              className="rounded-sm border-red-300 text-red-700 hover:bg-red-50"
+                              data-testid={`reupload-btn-${piece.id}`}
+                            >
+                              {reuploading && reuploadTarget === piece.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <UploadCloud className="w-4 h-4 mr-1" />
+                                  Ré-uploader
+                                </>
+                              )}
+                            </Button>
+                          ) : (
+                            /* View File Button */
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleViewFile(piece)}
+                              className="rounded-sm"
+                              data-testid={`view-file-${index}`}
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
+                              Voir
+                            </Button>
+                          )}
                           
                           {!piece.ai_proposal && piece.status === 'a_verifier' && piece.analysis_status !== 'analyzing' && (
                             <Button
@@ -1206,14 +1289,20 @@ const DossierView = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleViewFile(piece)}>
+                              <DropdownMenuItem onClick={() => handleViewFile(piece)} disabled={piece.file_missing}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 Voir le fichier
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => piecesApi.downloadFile(piece.id, piece.original_filename)}>
+                              <DropdownMenuItem onClick={() => piecesApi.downloadFile(piece.id, piece.original_filename)} disabled={piece.file_missing}>
                                 <Download className="w-4 h-4 mr-2" />
                                 Télécharger
                               </DropdownMenuItem>
+                              {piece.file_missing && (
+                                <DropdownMenuItem onClick={() => handleReupload(piece.id)}>
+                                  <UploadCloud className="w-4 h-4 mr-2" />
+                                  Ré-uploader le fichier
+                                </DropdownMenuItem>
+                              )}
                               {piece.ai_proposal && (
                                 <DropdownMenuItem onClick={() => setValidationPiece(piece)}>
                                   <CheckCircle className="w-4 h-4 mr-2" />

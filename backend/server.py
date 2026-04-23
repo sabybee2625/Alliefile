@@ -188,6 +188,7 @@ class PieceResponse(BaseModel):
     file_size: int = 0
     file_hash: Optional[str] = None
     is_duplicate: bool = False
+    file_missing: bool = False
     source: str = "upload"  # 'upload' or 'camera'
     status: str
     analysis_status: str = "pending"  # pending, queued, analyzing, complete, error
@@ -1103,7 +1104,14 @@ async def list_pieces(
         query["analysis_status"] = "error"
     
     pieces = await db.pieces.find(query, {"_id": 0, "extracted_text": 0}).sort("numero", 1).to_list(1000)
-    return [PieceResponse(**p) for p in pieces]
+    
+    # Check file existence in storage for each piece
+    result = []
+    for p in pieces:
+        missing = not await storage.file_exists(p["filename"])
+        p["file_missing"] = missing
+        result.append(PieceResponse(**p))
+    return result
 
 @api_router.get("/pieces/{piece_id}", response_model=PieceResponse)
 async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
@@ -1115,6 +1123,7 @@ async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    piece["file_missing"] = not await storage.file_exists(piece["filename"])
     return PieceResponse(**piece)
 
 @api_router.get("/pieces/{piece_id}/file")
@@ -1508,6 +1517,68 @@ async def validate_piece(piece_id: str, data: PieceValidation, user: dict = Depe
     
     piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
     return PieceResponse(**piece)
+
+@api_router.post("/pieces/{piece_id}/reupload", response_model=PieceResponse)
+async def reupload_piece_file(
+    piece_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    """Re-upload a file for an existing piece (when file is missing)"""
+    piece = await db.pieces.find_one({"id": piece_id}, {"_id": 0})
+    if not piece:
+        raise HTTPException(status_code=404, detail="Piece not found")
+    
+    dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
+    if not dossier:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    content = await file.read()
+    file_size = len(content)
+    
+    if file_size > config.MAX_FILE_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {config.MAX_FILE_SIZE_MB} Mo)")
+    
+    # Delete old file if it exists
+    await storage.delete_file(piece["filename"])
+    
+    # Save new file with the same filename key
+    ext = Path(file.filename).suffix.lower() if file.filename else Path(piece["original_filename"]).suffix.lower()
+    new_filename = f"{piece_id}{ext}"
+    
+    # Handle HEIC
+    if ext in ('.heic', '.heif'):
+        try:
+            from PIL import Image
+            from pillow_heif import register_heif_opener
+            register_heif_opener()
+            img = Image.open(io.BytesIO(content))
+            jpg_buffer = io.BytesIO()
+            img.convert('RGB').save(jpg_buffer, 'JPEG', quality=95)
+            content = jpg_buffer.getvalue()
+            new_filename = f"{piece_id}.jpg"
+            file_size = len(content)
+        except Exception as e:
+            logger.error(f"HEIC conversion error: {e}")
+    
+    await storage.save_file(content, new_filename)
+    
+    file_hash = compute_file_hash(content)
+    
+    await db.pieces.update_one(
+        {"id": piece_id},
+        {"$set": {
+            "filename": new_filename,
+            "original_filename": file.filename or piece["original_filename"],
+            "file_size": file_size,
+            "file_hash": file_hash,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    updated = await db.pieces.find_one({"id": piece_id}, {"_id": 0, "extracted_text": 0})
+    updated["file_missing"] = False
+    return PieceResponse(**updated)
 
 @api_router.delete("/pieces/{piece_id}")
 async def delete_piece(piece_id: str, user: dict = Depends(get_current_user)):

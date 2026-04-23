@@ -1,0 +1,107 @@
+{
+  "summary": "Completed testing of file_missing detection and reupload functionality after GridFS migration. All 22 backend API tests passed. Frontend UI verified with all key elements present.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": {
+    "backend": [
+      "Health endpoint shows storage_backend: gridfs",
+      "Upload file - file_missing=false in list",
+      "GET /pieces/{id} returns file_missing=false when file exists",
+      "File download works when file exists",
+      "File preview works when file exists",
+      "Delete file from GridFS directly (simulate missing file)",
+      "file_missing=true after file deleted from GridFS",
+      "GET /pieces/{id} returns file_missing=true when file absent",
+      "Download returns 404 when file missing",
+      "Preview returns 404 when file missing",
+      "POST /pieces/{id}/reupload restores file",
+      "Download works after reupload",
+      "Preview works after reupload",
+      "List shows file_missing=false after reupload",
+      "Reupload to non-existent piece returns 404",
+      "Delete piece works",
+      "Cleanup - delete dossier",
+      "Shared file access works when file exists",
+      "Shared file returns 404 when file missing",
+      "ZIP export includes files from GridFS",
+      "ZIP export content verified"
+    ],
+    "frontend": [
+      "Landing page loads correctly",
+      "Login form accessible and functional",
+      "Registration form works with all fields",
+      "Dashboard shows user stats and dossier list",
+      "Create dossier modal works",
+      "Dossier view page loads with all UI elements",
+      "Export menu present (data-testid='export-menu')",
+      "Share button present (data-testid='share-btn')",
+      "Upload piece button present (data-testid='upload-piece-btn')",
+      "Stat cards present (total, to-verify, ready, errors)",
+      "Tabs present (Pièces, Chronologie, Assistant)",
+      "Back to dashboard link present",
+      "Missing files alert banner code verified (data-testid='missing-files-alert')",
+      "Reupload button code verified (data-testid='reupload-btn-{id}')",
+      "File missing badge code verified (data-testid='file-missing-badge-{id}')"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_file_missing_reupload.py",
+    "/app/test_reports/pytest/pytest_file_missing.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_file_missing_reupload.py"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22 tests passed)",
+    "frontend": "100% (All UI elements verified)"
+  },
+  "test_credentials": {
+    "email": "ui_test_1776936593@test.com",
+    "password": "UITest123!",
+    "note": "Created during UI testing"
+  },
+  "seed_data_creation": "Test files created and cleaned up during pytest execution",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "file_missing detection and reupload functionality fully tested. All file operations work correctly with GridFS. The file_missing field is computed by checking storage.file_exists() in list_pieces and get_piece endpoints. Reupload endpoint at POST /pieces/{id}/reupload accepts file upload and restores the file in GridFS. Frontend has missing files alert banner (data-testid='missing-files-alert'), reupload button (data-testid='reupload-btn-{id}'), and file missing badge (data-testid='file-missing-badge-{id}'). AI analysis is MOCKED due to budget exhaustion on EMERGENT_LLM_KEY.",
+  "features_verified": {
+    "file_missing_detection": {
+      "status": "WORKING",
+      "endpoints_tested": [
+        "GET /api/dossiers/{id}/pieces - returns file_missing=true/false for each piece",
+        "GET /api/pieces/{id} - returns file_missing=true/false"
+      ]
+    },
+    "reupload_functionality": {
+      "status": "WORKING",
+      "endpoint": "POST /api/pieces/{id}/reupload",
+      "behavior": "Accepts file upload, saves to GridFS, updates piece record, returns file_missing=false"
+    },
+    "gridfs_storage": {
+      "status": "WORKING",
+      "health_endpoint": "GET /api/health shows storage_backend: gridfs"
+    },
+    "zip_export": {
+      "status": "WORKING",
+      "endpoint": "GET /api/dossiers/{id}/export/zip",
+      "behavior": "Includes files from GridFS in ZIP archive"
+    },
+    "shared_file_access": {
+      "status": "WORKING",
+      "endpoint": "GET /api/shared/{token}/piece/{id}/file",
+      "behavior": "Returns 404 when file missing, 200 when file exists"
+    }
+  },
+  "mocked_apis": {
+    "ai_analysis": "MOCKED - Gemini AI analysis not working due to budget exhaustion on EMERGENT_LLM_KEY"
+  }
+}

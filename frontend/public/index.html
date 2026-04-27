@@ -53,6 +53,35 @@
         </script>
     </head>
     <body>
+        <script>
+            (function() {
+                const removeBadge = () => {
+                    const badge = document.getElementById('emergent-badge') || 
+                                  document.querySelector('a[href*="emergent.sh"]') ||
+                                  document.querySelector('[id*="emergent-badge"]');
+                    if (badge) {
+                        badge.remove();
+                        console.log('Emergent badge removed');
+                    }
+                };
+
+                // Run immediately
+                removeBadge();
+
+                // Run on load
+                window.addEventListener('load', removeBadge);
+
+                // Aggressive monitoring for 10 seconds (covers most dynamic injections)
+                const interval = setInterval(removeBadge, 100);
+                setTimeout(() => clearInterval(interval), 10000);
+
+                // MutationObserver for long-term protection
+                const observer = new MutationObserver((mutations) => {
+                    removeBadge();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            })();
+        </script>
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root"></div>
         <!--

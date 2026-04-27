@@ -141,3 +141,17 @@
 [data-debug-wrapper="true"] {
     display: contents !important;
 }
+
+/* Force hide Emergent badge */
+#emergent-badge, 
+[id*="emergent-badge"],
+a[href*="emergent.sh"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    height: 0 !important;
+    width: 0 !important;
+    position: absolute !important;
+    left: -9999px !important;
+}

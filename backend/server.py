@@ -44,7 +44,7 @@ from security import (
     log_share_access,
     validate_user_owns_resource
 )
-from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage
+from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage, EmergentObjectStorage
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -1299,7 +1299,7 @@ async def process_analysis_queue(dossier_id: str, user: dict = Depends(get_curre
                 )
             finally:
                 # Clean up temp file (only if it's a real temp file, not local storage)
-                if isinstance(storage, GridFSStorage) and filepath.exists():
+                if not isinstance(storage, LocalStorage) and filepath.exists():
                     filepath.unlink()
             
             # Update with results
@@ -1397,7 +1397,7 @@ async def analyze_piece(piece_id: str, user: dict = Depends(get_current_user)):
         try:
             ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
         finally:
-            if isinstance(storage, GridFSStorage) and filepath.exists():
+            if not isinstance(storage, LocalStorage) and filepath.exists():
                 filepath.unlink()
         
         await db.pieces.update_one(
@@ -1466,7 +1466,7 @@ async def reanalyze_piece(piece_id: str, user: dict = Depends(get_current_user))
         try:
             ai_proposal = await analyze_document_with_ai(filepath, piece["file_type"], piece["original_filename"], piece_id)
         finally:
-            if isinstance(storage, GridFSStorage) and filepath.exists():
+            if not isinstance(storage, LocalStorage) and filepath.exists():
                 filepath.unlink()
         
         await db.pieces.update_one(
@@ -2806,6 +2806,54 @@ async def migrate_local_to_gridfs(user: dict = Depends(get_current_user)):
             errors += 1
     
     return {"migrated": migrated, "already_existed": already, "errors": errors}
+
+@api_router.get("/migrate-to-emergent-storage")
+async def migrate_gridfs_to_emergent():
+    """Migrate files from GridFS to Emergent Object Storage. Call once after switching backends."""
+    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+    
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name="file_storage")
+    
+    # Get all referenced filenames
+    pieces = await db.pieces.find({}, {"filename": 1, "_id": 0}).to_list(100000)
+    referenced = {p["filename"] for p in pieces}
+    
+    # Check what's already in Emergent storage
+    migrated = 0
+    already_exists = 0
+    not_in_gridfs = 0
+    errors = 0
+    
+    for filename in referenced:
+        # Check if already in Emergent storage
+        if await storage.file_exists(filename):
+            already_exists += 1
+            continue
+        
+        # Try to get from GridFS
+        try:
+            stream = await bucket.open_download_stream_by_name(filename)
+            content = await stream.read()
+            
+            # Upload to Emergent Object Storage
+            await storage.save_file(content, filename)
+            migrated += 1
+            
+            if migrated % 5 == 0:
+                logger.info(f"Migrated {migrated} files to Emergent storage...")
+                
+        except Exception as e:
+            # File not in GridFS either
+            not_in_gridfs += 1
+    
+    return {
+        "total_referenced": len(referenced),
+        "migrated": migrated,
+        "already_in_emergent": already_exists,
+        "not_in_gridfs": not_in_gridfs,
+        "errors": errors,
+        "status": "OK" if not_in_gridfs == 0 else "PARTIAL"
+    }
 
 # Include router
 app.include_router(api_router)

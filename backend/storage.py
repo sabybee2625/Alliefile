@@ -1,11 +1,13 @@
 """
 Storage abstraction layer for file management
-Supports local filesystem, S3-compatible storage, and MongoDB GridFS
+Supports local filesystem, S3-compatible storage, MongoDB GridFS, and Emergent Object Storage
 """
 import os
+import io
 import aiofiles
+import requests
 from pathlib import Path
-from typing import Optional, BinaryIO, AsyncGenerator
+from typing import Optional, AsyncGenerator
 from abc import ABC, abstractmethod
 import hashlib
 import logging
@@ -13,49 +15,165 @@ import tempfile
 
 logger = logging.getLogger(__name__)
 
+APP_NAME = "justice-hub-45"
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+
 
 class StorageBackend(ABC):
     """Abstract base class for storage backends"""
     
     @abstractmethod
     async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
-        """Save file and return storage path/key"""
         pass
     
     @abstractmethod
     async def get_file(self, path: str) -> bytes:
-        """Get file content"""
         pass
     
     @abstractmethod
     async def delete_file(self, path: str) -> bool:
-        """Delete file, return True if successful"""
         pass
     
     @abstractmethod
     async def file_exists(self, path: str) -> bool:
-        """Check if file exists"""
         pass
     
     @abstractmethod
     async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
-        """Get file as async stream for large files"""
         pass
     
     @abstractmethod
     def get_file_size(self, path: str) -> int:
-        """Get file size in bytes"""
         pass
 
     async def get_temp_filepath(self, filename: str) -> Path:
-        """Download file to a temporary location and return the path.
-        Caller is responsible for deleting the temp file."""
+        """Download file to a temporary location and return the path."""
         content = await self.get_file(filename)
         ext = Path(filename).suffix
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         tmp.write(content)
         tmp.close()
         return Path(tmp.name)
+
+
+class EmergentObjectStorage(StorageBackend):
+    """Emergent Object Storage - persistent cloud storage that survives redeployments"""
+    
+    def __init__(self):
+        self._storage_key = None
+        self._emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+        if not self._emergent_key:
+            raise RuntimeError("EMERGENT_LLM_KEY not set - required for object storage")
+        self._init_storage()
+    
+    def _init_storage(self):
+        """Initialize storage session - call once at startup"""
+        if self._storage_key:
+            return
+        try:
+            resp = requests.post(
+                f"{STORAGE_URL}/init",
+                json={"emergent_key": self._emergent_key},
+                timeout=30
+            )
+            resp.raise_for_status()
+            self._storage_key = resp.json()["storage_key"]
+            logger.info("Emergent Object Storage initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Emergent Object Storage: {e}")
+            raise
+    
+    def _ensure_key(self):
+        if not self._storage_key:
+            self._init_storage()
+    
+    def _get_path(self, filename: str) -> str:
+        """Get storage path for a filename"""
+        return f"{APP_NAME}/uploads/{filename}"
+    
+    def _get_content_type(self, filename: str) -> str:
+        """Determine content type from extension"""
+        ext = Path(filename).suffix.lower()
+        types = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+            ".gif": "image/gif", ".webp": "image/webp", ".pdf": "application/pdf",
+            ".doc": "application/msword", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".txt": "text/plain", ".csv": "text/csv",
+        }
+        return types.get(ext, "application/octet-stream")
+    
+    async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
+        """Upload file to Emergent Object Storage"""
+        self._ensure_key()
+        path = self._get_path(filename)
+        content_type = self._get_content_type(filename)
+        
+        try:
+            resp = requests.put(
+                f"{STORAGE_URL}/objects/{path}",
+                headers={"X-Storage-Key": self._storage_key, "Content-Type": content_type},
+                data=content,
+                timeout=120
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            logger.debug(f"Saved to Emergent Object Storage: {result.get('path', path)}")
+            return filename
+        except Exception as e:
+            logger.error(f"Failed to upload {filename} to Object Storage: {e}")
+            raise
+    
+    async def get_file(self, path: str) -> bytes:
+        """Download file from Emergent Object Storage"""
+        self._ensure_key()
+        storage_path = self._get_path(path)
+        
+        try:
+            resp = requests.get(
+                f"{STORAGE_URL}/objects/{storage_path}",
+                headers={"X-Storage-Key": self._storage_key},
+                timeout=60
+            )
+            resp.raise_for_status()
+            return resp.content
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise FileNotFoundError(f"File not found: {path}")
+            raise
+        except Exception as e:
+            raise FileNotFoundError(f"Error fetching {path}: {e}")
+    
+    async def delete_file(self, path: str) -> bool:
+        """Soft-delete (Object Storage has no delete API)"""
+        logger.debug(f"Soft-delete noted for: {path}")
+        return True
+    
+    async def file_exists(self, path: str) -> bool:
+        """Check if file exists by attempting to get it"""
+        self._ensure_key()
+        storage_path = self._get_path(path)
+        
+        try:
+            resp = requests.get(
+                f"{STORAGE_URL}/objects/{storage_path}",
+                headers={"X-Storage-Key": self._storage_key},
+                timeout=10,
+                stream=True
+            )
+            resp.close()
+            return resp.status_code == 200
+        except Exception:
+            return False
+    
+    async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
+        """Stream file from Object Storage"""
+        content = await self.get_file(path)
+        chunk_size = 65536
+        for i in range(0, len(content), chunk_size):
+            yield content[i:i + chunk_size]
+    
+    def get_file_size(self, path: str) -> int:
+        return 0
 
 
 class LocalStorage(StorageBackend):
@@ -66,11 +184,9 @@ class LocalStorage(StorageBackend):
         self.base_path.mkdir(parents=True, exist_ok=True)
     
     def _get_full_path(self, path: str) -> Path:
-        """Get full filesystem path"""
         return self.base_path / path
     
     async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
-        """Save file to local filesystem"""
         if folder:
             folder_path = self.base_path / folder
             folder_path.mkdir(parents=True, exist_ok=True)
@@ -79,31 +195,22 @@ class LocalStorage(StorageBackend):
             storage_path = filename
         
         full_path = self._get_full_path(storage_path)
-        
         async with aiofiles.open(full_path, 'wb') as f:
             await f.write(content)
-        
-        logger.debug(f"Saved file to local storage: {storage_path}")
         return storage_path
     
     async def get_file(self, path: str) -> bytes:
-        """Get file from local filesystem"""
         full_path = self._get_full_path(path)
-        
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        
         async with aiofiles.open(full_path, 'rb') as f:
             return await f.read()
     
     async def delete_file(self, path: str) -> bool:
-        """Delete file from local filesystem"""
         full_path = self._get_full_path(path)
-        
         try:
             if full_path.exists():
                 full_path.unlink()
-                logger.debug(f"Deleted file from local storage: {path}")
                 return True
             return False
         except Exception as e:
@@ -111,27 +218,21 @@ class LocalStorage(StorageBackend):
             return False
     
     async def file_exists(self, path: str) -> bool:
-        """Check if file exists in local filesystem"""
         return self._get_full_path(path).exists()
     
     async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
-        """Stream file from local filesystem"""
         full_path = self._get_full_path(path)
-        
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        
         async with aiofiles.open(full_path, 'rb') as f:
-            while chunk := await f.read(65536):  # 64KB chunks
+            while chunk := await f.read(65536):
                 yield chunk
     
     def get_file_size(self, path: str) -> int:
-        """Get file size from local filesystem"""
         full_path = self._get_full_path(path)
         return full_path.stat().st_size if full_path.exists() else 0
 
     async def get_temp_filepath(self, filename: str) -> Path:
-        """For local storage, just return the actual path (no temp copy needed)"""
         full_path = self._get_full_path(filename)
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {filename}")
@@ -139,169 +240,60 @@ class LocalStorage(StorageBackend):
 
 
 class GridFSStorage(StorageBackend):
-    """MongoDB GridFS storage - files stored in MongoDB Atlas"""
+    """MongoDB GridFS storage"""
     
     def __init__(self, db):
         import motor.motor_asyncio
-        from gridfs import NoFile
         self._db = db
         self._bucket = motor.motor_asyncio.AsyncIOMotorGridFSBucket(db, bucket_name="file_storage")
     
     async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
-        """Save file to GridFS"""
         key = f"{folder}/{filename}" if folder else filename
-        
-        # Delete existing file with same name (overwrite)
         try:
             async for grid_file in self._bucket.find({"filename": key}):
                 await self._bucket.delete(grid_file._id)
         except Exception:
             pass
-        
         await self._bucket.upload_from_stream(key, content)
-        logger.debug(f"Saved file to GridFS: {key}")
         return key
     
     async def get_file(self, path: str) -> bytes:
-        """Get file from GridFS"""
         try:
             stream = await self._bucket.open_download_stream_by_name(path)
             return await stream.read()
-        except Exception as e:
+        except Exception:
             raise FileNotFoundError(f"File not found in GridFS: {path}")
     
     async def delete_file(self, path: str) -> bool:
-        """Delete file from GridFS"""
         try:
             deleted = False
             async for grid_file in self._bucket.find({"filename": path}):
                 await self._bucket.delete(grid_file._id)
                 deleted = True
-            if deleted:
-                logger.debug(f"Deleted file from GridFS: {path}")
             return deleted
         except Exception as e:
-            logger.error(f"Error deleting file from GridFS {path}: {e}")
+            logger.error(f"Error deleting from GridFS {path}: {e}")
             return False
     
     async def file_exists(self, path: str) -> bool:
-        """Check if file exists in GridFS"""
         try:
-            cursor = self._bucket.find({"filename": path})
-            async for _ in cursor:
+            async for _ in self._bucket.find({"filename": path}):
                 return True
             return False
         except Exception:
             return False
     
     async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
-        """Stream file from GridFS"""
         try:
             stream = await self._bucket.open_download_stream_by_name(path)
             while chunk := await stream.readchunk():
                 if not chunk:
                     break
                 yield chunk
-        except Exception as e:
+        except Exception:
             raise FileNotFoundError(f"File not found in GridFS: {path}")
     
     def get_file_size(self, path: str) -> int:
-        """Get file size - sync version returns 0, use async version"""
-        return 0
-
-    async def get_file_size_async(self, path: str) -> int:
-        """Get file size from GridFS"""
-        try:
-            async for grid_file in self._bucket.find({"filename": path}):
-                return grid_file.length
-            return 0
-        except Exception:
-            return 0
-
-
-class S3Storage(StorageBackend):
-    """
-    S3-compatible storage (AWS S3, Cloudflare R2, MinIO)
-    Requires: pip install aioboto3
-    """
-    
-    def __init__(
-        self,
-        bucket: str,
-        access_key: str,
-        secret_key: str,
-        region: str = "eu-west-1",
-        endpoint_url: Optional[str] = None
-    ):
-        self.bucket = bucket
-        self.access_key = access_key
-        self.secret_key = secret_key
-        self.region = region
-        self.endpoint_url = endpoint_url
-        self._client = None
-    
-    async def _get_client(self):
-        """Get or create S3 client"""
-        if self._client is None:
-            try:
-                import aioboto3
-                session = aioboto3.Session()
-                self._client = await session.client(
-                    's3',
-                    aws_access_key_id=self.access_key,
-                    aws_secret_access_key=self.secret_key,
-                    region_name=self.region,
-                    endpoint_url=self.endpoint_url
-                ).__aenter__()
-            except ImportError:
-                raise RuntimeError(
-                    "S3 storage requires aioboto3. Install with: pip install aioboto3"
-                )
-        return self._client
-    
-    async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
-        """Save file to S3"""
-        client = await self._get_client()
-        key = f"{folder}/{filename}" if folder else filename
-        await client.put_object(Bucket=self.bucket, Key=key, Body=content)
-        logger.debug(f"Saved file to S3: {key}")
-        return key
-    
-    async def get_file(self, path: str) -> bytes:
-        """Get file from S3"""
-        client = await self._get_client()
-        response = await client.get_object(Bucket=self.bucket, Key=path)
-        return await response['Body'].read()
-    
-    async def delete_file(self, path: str) -> bool:
-        """Delete file from S3"""
-        try:
-            client = await self._get_client()
-            await client.delete_object(Bucket=self.bucket, Key=path)
-            logger.debug(f"Deleted file from S3: {path}")
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting file {path}: {e}")
-            return False
-    
-    async def file_exists(self, path: str) -> bool:
-        """Check if file exists in S3"""
-        try:
-            client = await self._get_client()
-            await client.head_object(Bucket=self.bucket, Key=path)
-            return True
-        except Exception:
-            return False
-    
-    async def get_file_stream(self, path: str) -> AsyncGenerator[bytes, None]:
-        """Stream file from S3"""
-        client = await self._get_client()
-        response = await client.get_object(Bucket=self.bucket, Key=path)
-        async for chunk in response['Body'].iter_chunks(chunk_size=65536):
-            yield chunk
-    
-    def get_file_size(self, path: str) -> int:
-        """Get file size from S3 - sync version for compatibility"""
         return 0
 
 
@@ -311,31 +303,16 @@ def get_storage_backend(db_instance=None):
     
     backend_type = config.STORAGE_BACKEND.value
     
-    if backend_type == "gridfs":
+    if backend_type == "emergent":
+        return EmergentObjectStorage()
+    elif backend_type == "gridfs":
         if db_instance is None:
             raise RuntimeError("GridFS storage requires a database instance")
         return GridFSStorage(db_instance)
-    elif backend_type == "s3" and config.is_s3_configured:
-        return S3Storage(
-            bucket=config.S3_BUCKET,
-            access_key=config.S3_ACCESS_KEY,
-            secret_key=config.S3_SECRET_KEY,
-            region=config.S3_REGION,
-            endpoint_url=config.S3_ENDPOINT_URL
-        )
-    elif backend_type == "r2" and config.is_s3_configured:
-        return S3Storage(
-            bucket=config.S3_BUCKET,
-            access_key=config.S3_ACCESS_KEY,
-            secret_key=config.S3_SECRET_KEY,
-            region="auto",
-            endpoint_url=config.S3_ENDPOINT_URL
-        )
     else:
         return LocalStorage(config.UPLOAD_DIR)
 
 
-# Helper function to compute file hash
 def compute_file_hash(content: bytes) -> str:
     """Compute SHA256 hash of file content"""
     return hashlib.sha256(content).hexdigest()

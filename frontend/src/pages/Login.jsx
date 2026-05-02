@@ -44,9 +44,9 @@ const Login = () => {
           </div>
           <div>
             <h1 className="font-heading font-bold text-2xl text-slate-900 tracking-tight">
-              Dossier Juridique
+              AlliéFile
             </h1>
-            <p className="text-sm text-slate-500">Intelligent</p>
+            <p className="text-sm text-slate-500">Votre allié juridique intelligent</p>
           </div>
         </div>
 

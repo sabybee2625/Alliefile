@@ -33,7 +33,7 @@ export const Layout = ({ children }) => {
                 <Scale className="w-4 h-4 text-white" />
               </div>
               <span className="font-heading font-bold text-lg text-slate-900 tracking-tight">
-                Dossier Juridique
+                AlliéFile
               </span>
             </Link>
 

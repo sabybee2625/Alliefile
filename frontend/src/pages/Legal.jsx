@@ -9,7 +9,7 @@ export function CGU() {
       <Section title="1. Objet">
         <p>
           Les présentes Conditions Générales d'Utilisation (CGU) ont pour objet de définir les modalités et conditions 
-          d'utilisation de la plateforme "Dossier Juridique Intelligent" (ci-après "le Service"), ainsi que de définir 
+          d'utilisation de la plateforme "AlliéFile" (ci-après "le Service"), ainsi que de définir 
           les droits et obligations des parties dans ce cadre.
         </p>
       </Section>
@@ -128,7 +128,7 @@ export function Privacy() {
     <LegalLayout title="Politique de Confidentialité" icon={Shield}>
       <Section title="1. Responsable du Traitement">
         <p>
-          Le responsable du traitement des données personnelles collectées via le Service "Dossier Juridique Intelligent" 
+          Le responsable du traitement des données personnelles collectées via le Service "AlliéFile" 
           est l'éditeur de la plateforme.
         </p>
       </Section>

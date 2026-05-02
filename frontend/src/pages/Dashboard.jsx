@@ -271,7 +271,7 @@ const Dashboard = () => {
                     size="sm"
                   >
                     <TrendingUp className="w-4 h-4 mr-2" />
-                    Passer à Standard
+                    Passer à Essentiel
                   </Button>
                 )}
                 {userStats.plan === 'standard' && (

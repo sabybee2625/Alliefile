@@ -1,0 +1,66 @@
+{
+  "summary": "AlliéFile rebrand validated: backend (7/7 pytest) + frontend (all critical flows). Plans Essentiel/Pro pricing (14.90/39.90) correct, plan aliases essentiel/pro accepted in /payments/validate-promo and /payments/checkout, register fire-and-forget Resend email non-blocking, login post-register works. Frontend Landing on /, NotFound on *, authed root redirects to /dashboard, register E2E flow works, SEO meta tags (title/og/twitter/canonical/JSON-LD) present in index.html.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/dashboard (header stats banner)", "issues": ["Bouton upgrade affiche 'Passer à Standard' (clé interne) — incohérent avec le rebranding public 'Essentiel'. Devrait afficher 'Passer à Essentiel'."]},
+      {"screen": "public/index.html", "issues": ["<html lang=\"en\"> alors que tout le contenu est en français — devrait être lang=\"fr\" pour SEO/a11y."]}
+    ]
+  },
+  "passed_tests": {
+    "backend": [
+      "GET /api/payments/plans -> standard.name=Essentiel (14.90/149), premium.name=Pro (39.90/399)",
+      "POST /api/auth/register -> 200 + access_token (email Resend skip silencieux non-bloquant)",
+      "POST /api/auth/login après register -> 200 + token",
+      "POST /api/payments/validate-promo {plan_id:'essentiel', code bidon} -> 400 'Code invalide' (PAS 'Plan invalide')",
+      "POST /api/payments/validate-promo {plan_id:'standard', code bidon} -> 400 'Code invalide'",
+      "POST /api/payments/validate-promo {plan_id:'pro', code bidon} -> 400 'Code invalide'",
+      "POST /api/payments/checkout {plan_id:'essentiel'} -> 503 (Stripe non configuré, alias accepté, pas 'Plan invalide')"
+    ],
+    "frontend": [
+      "/ en non-auth: Landing chargée, title='AlliéFile — Votre allié juridique intelligent'",
+      "data-testid landing-hero, landing-pricing, landing-footer, landing-register-btn, landing-cta-hero présents",
+      "Landing affiche les 3 plans: Découverte, Essentiel (14,90€), Pro (39,90€)",
+      "Clic sur landing-cta-hero -> /register",
+      "Clic sur landing-register-btn -> /register",
+      "/xyz-inexistante -> NotFound: data-testid 404-title (contient '404'), 404-home-btn redirige vers /",
+      "/pricing affiche 'Essentiel' + 'Pro' + prix 14,90 / 39,90 (chargés depuis /api/payments/plans)",
+      "Inscription E2E /register (name + email + password + confirm-password) -> redirige vers /dashboard, user créé",
+      "/ en authentifié -> redirige vers /dashboard"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_alliefile_rebrand.py",
+    "/app/test_reports/pytest/pytest_alliefile.xml"
+  ],
+  "action_items": [
+    "Mineur: dans Dashboard, remplacer libellé 'Passer à Standard' par 'Passer à Essentiel' (mapper standard->Essentiel dans l'UI).",
+    "Mineur: changer <html lang=\"en\"> en <html lang=\"fr\"> dans /app/frontend/public/index.html pour cohérence SEO/a11y."
+  ],
+  "critical_code_review_comments": [
+    "OK: payments.normalize_plan_id et config.resolve_plan_key gèrent proprement l'alias public->interne sans casser les users existants en DB (standard/premium).",
+    "OK: register utilise BackgroundTasks + send_welcome_email_background, l'envoi email est try/except et logge 'Skipping email send' si RESEND_API_KEY absente, donc l'inscription ne fail jamais sur l'email.",
+    "OK: SEO complet (title, description, og:*, twitter:*, canonical, JSON-LD SoftwareApplication).",
+    "Note: server.py est volumineux (>2000 lignes) — à découper en modules (auth, dossiers, pieces, analysis, sharing) lors d'une future refacto."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_alliefile_rebrand.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "100% (all critical flows pass)"
+  },
+  "test_credentials": {
+    "existing": {"email": "ui_test_1776936593@test.com", "password": "UITest123!"},
+    "newly_created_during_test": "ui_alliefile2_<ts>@test.com / TestPass123! and TEST_alliefile_<ts>@test.com / TestPass123!"
+  },
+  "seed_data_creation": "Plusieurs users TEST_alliefile_* et ui_alliefile2_* créés via API et UI; pas de cleanup automatique (pas de route DELETE user dans la suite, mais préfixe TEST_ ou ui_ permet identification).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Rebrand AlliéFile complètement testé et validé. Backend: alias plans (essentiel<->standard, pro<->premium) acceptés partout (validate-promo, checkout). Email Resend fire-and-forget non-bloquant (RESEND_API_KEY absent en preview = skip silencieux). Frontend: Landing publique sur /, NotFound sur *, authed root redirige vers /dashboard, SEO OK (title fr, og/twitter, JSON-LD, robots.txt, sitemap.xml). Seuls 2 points cosmétiques mineurs (label 'Passer à Standard' à corriger en 'Essentiel', html lang='en'->'fr')."
+}

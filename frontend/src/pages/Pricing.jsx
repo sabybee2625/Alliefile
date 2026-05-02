@@ -205,7 +205,7 @@ const PricingPage = () => {
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
-                  20 pièces maximum
+                  15 pièces maximum
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
@@ -240,7 +240,7 @@ const PricingPage = () => {
             </CardFooter>
           </Card>
 
-          {/* Standard Plan */}
+          {/* Essentiel Plan (internal: standard) */}
           {plans?.plans?.standard && (
             <Card className={`border-2 ${getCurrentPlan() === 'standard' ? 'border-blue-400' : 'border-slate-200'} relative`}>
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -250,7 +250,7 @@ const PricingPage = () => {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xl flex items-center gap-2">
                     <Zap className="w-5 h-5 text-blue-500" />
-                    Standard
+                    {plans.plans.standard.name}
                   </CardTitle>
                   {getCurrentPlan() === 'standard' && (
                     <Badge variant="outline" className="text-blue-600 border-blue-300">
@@ -258,7 +258,7 @@ const PricingPage = () => {
                     </Badge>
                   )}
                 </div>
-                <CardDescription>Pour les particuliers</CardDescription>
+                <CardDescription>Pour gérer vos dossiers sereinement</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-6">
@@ -301,14 +301,14 @@ const PricingPage = () => {
             </Card>
           )}
 
-          {/* Premium Plan */}
+          {/* Pro Plan (internal: premium) */}
           {plans?.plans?.premium && (
             <Card className={`border-2 ${getCurrentPlan() === 'premium' ? 'border-amber-400' : 'border-slate-200'}`}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xl flex items-center gap-2">
                     <Crown className="w-5 h-5 text-amber-500" />
-                    Premium
+                    {plans.plans.premium.name}
                   </CardTitle>
                   {getCurrentPlan() === 'premium' && (
                     <Badge variant="outline" className="text-amber-600 border-amber-300">
@@ -316,7 +316,7 @@ const PricingPage = () => {
                     </Badge>
                   )}
                 </div>
-                <CardDescription>Pour les professionnels</CardDescription>
+                <CardDescription>Pour les professionnels exigeants</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-6">

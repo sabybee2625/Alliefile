@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query, Body, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query, Body, Request, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -45,6 +45,7 @@ from security import (
     validate_user_owns_resource
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage, EmergentObjectStorage
+from emailing import send_welcome_email_background
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -58,9 +59,9 @@ db = client[config.DB_NAME]
 
 # Create the main app with production settings
 app = FastAPI(
-    title="Dossier Juridique Intelligent",
-    description="SaaS sécurisé pour la gestion de dossiers juridiques",
-    version="1.0.0",
+    title="AlliéFile — Votre allié juridique intelligent",
+    description="SaaS sécurisé pour la constitution et l'analyse de dossiers juridiques",
+    version="1.1.0",
     docs_url="/api/docs" if config.DEBUG else None,  # Disable docs in production
     redoc_url="/api/redoc" if config.DEBUG else None,
 )
@@ -369,7 +370,7 @@ async def check_plan_limit(user: dict, limit_type: str, current_count: int = 0) 
 # ===================== AUTH ROUTES =====================
 
 @api_router.post("/auth/register", response_model=TokenResponse)
-async def register(data: UserCreate, request: Request):
+async def register(data: UserCreate, request: Request, background_tasks: BackgroundTasks):
     # Rate limiting
     client_ip = get_client_ip(request)
     await check_rate_limit_register(request, client_ip)
@@ -393,6 +394,12 @@ async def register(data: UserCreate, request: Request):
         "created_at": now
     }
     await db.users.insert_one(user_doc)
+    
+    # Fire-and-forget welcome email (non-blocking, never fails the request)
+    try:
+        background_tasks.add_task(send_welcome_email_background, data.email, data.name)
+    except Exception as e:
+        logger.error(f"Failed to enqueue welcome email for {data.email}: {e}")
     
     token = create_token(user_id)
     return TokenResponse(
@@ -530,7 +537,8 @@ from payments import (
     create_checkout_session,
     get_checkout_status,
     handle_stripe_webhook,
-    STRIPE_AVAILABLE
+    STRIPE_AVAILABLE,
+    normalize_plan_id
 )
 
 @api_router.get("/payments/plans")
@@ -555,7 +563,8 @@ async def create_payment_checkout(
     if not api_key:
         raise HTTPException(status_code=503, detail="Stripe non configuré")
     
-    # Validate plan
+    # Validate plan (accept both "essentiel"/"pro" slugs and internal keys)
+    data.plan_id = normalize_plan_id(data.plan_id)
     if data.plan_id not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Plan invalide")
     
@@ -785,6 +794,7 @@ async def validate_promo(
     user: dict = Depends(get_current_user)
 ):
     """Validate a promo code before checkout"""
+    plan_id = normalize_plan_id(plan_id)
     result = await validate_promo_code(db, code, plan_id)
     
     if not result["valid"]:

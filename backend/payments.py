@@ -28,33 +28,50 @@ except ImportError:
 
 # Fixed server-side pricing (NEVER accept amounts from frontend)
 SUBSCRIPTION_PLANS = {
+    # Internal key "standard" = public "Essentiel"
     "standard": {
-        "name": "Standard",
-        "price_monthly": 9.90,
-        "price_yearly": 99.00,
+        "name": "Essentiel",
+        "slug": "essentiel",
+        "price_monthly": 14.90,
+        "price_yearly": 149.00,
         "currency": "eur",
         "features": [
             "5 dossiers",
-            "500 pièces",
+            "100 pièces par dossier",
+            "20 liens de partage",
             "Export PDF + DOCX",
-            "Partage avancé",
             "Assistant illimité"
         ]
     },
+    # Internal key "premium" = public "Pro"
     "premium": {
-        "name": "Premium",
-        "price_monthly": 19.90,
-        "price_yearly": 199.00,
+        "name": "Pro",
+        "slug": "pro",
+        "price_monthly": 39.90,
+        "price_yearly": 399.00,
         "currency": "eur",
         "features": [
             "Dossiers illimités",
             "Pièces illimitées",
-            "Partage sécurisé avancé",
-            "Historique complet",
-            "Support prioritaire"
+            "Liens de partage illimités",
+            "Toutes les fonctionnalités",
+            "Support prioritaire",
+            "Stockage 10 Go"
         ]
     }
 }
+
+# Public slug -> internal key mapping (frontend may send either)
+PLAN_SLUG_ALIASES = {
+    "essentiel": "standard",
+    "pro": "premium",
+}
+
+def normalize_plan_id(plan_id: str) -> str:
+    """Accept both internal keys and public slugs."""
+    if not plan_id:
+        return plan_id
+    return PLAN_SLUG_ALIASES.get(plan_id, plan_id)
 
 
 # ===================== MODELS =====================
@@ -151,6 +168,7 @@ async def increment_promo_usage(db, code: str):
 
 def get_plan_price(plan_id: str, billing_period: str) -> tuple:
     """Get price for a plan, returns (amount, currency)"""
+    plan_id = normalize_plan_id(plan_id)
     if plan_id not in SUBSCRIPTION_PLANS:
         raise ValueError(f"Invalid plan: {plan_id}")
     

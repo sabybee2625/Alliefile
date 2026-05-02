@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /dossier/
+Disallow: /api/
+
+Sitemap: https://alliefile.com/sitemap.xml

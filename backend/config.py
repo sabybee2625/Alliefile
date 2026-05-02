@@ -146,6 +146,8 @@ PLAN_LIMITS = {
         can_use_assistant=True,  # Only expose_faits allowed
         storage_mb=100
     ),
+    # "standard" is the internal key kept for backwards compatibility with
+    # existing users/DB records. Publicly exposed as "Essentiel" (14,90€/mois).
     "standard": PlanLimits(
         max_dossiers=5,
         max_pieces_per_dossier=100,
@@ -158,6 +160,8 @@ PLAN_LIMITS = {
         can_use_assistant=True,
         storage_mb=2000
     ),
+    # "premium" internal key kept for backwards compatibility.
+    # Publicly exposed as "Pro" (39,90€/mois).
     "premium": PlanLimits(
         max_dossiers=-1,  # Unlimited
         max_pieces_per_dossier=-1,
@@ -172,6 +176,20 @@ PLAN_LIMITS = {
     )
 }
 
+# Public display names <-> internal plan keys
+# Allows accepting new slugs ("essentiel", "pro") without breaking existing DB
+PLAN_ALIASES = {
+    "essentiel": "standard",
+    "pro": "premium",
+}
+
+def resolve_plan_key(plan: str) -> str:
+    """Map a public-facing plan slug to its internal canonical key."""
+    if not plan:
+        return "free"
+    return PLAN_ALIASES.get(plan, plan)
+
 def get_plan_limits(plan: str) -> PlanLimits:
     """Get limits for a plan, default to free"""
-    return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+    key = resolve_plan_key(plan)
+    return PLAN_LIMITS.get(key, PLAN_LIMITS["free"])

@@ -1,139 +1,148 @@
 # AlliéFile — PRD
 
-## Version 1.3.0 - Rebranding "AlliéFile" + Landing publique + SEO + Email bienvenue (2026-05-02)
+## Version 1.4.0 — Admin + Stripe webhooks + Tests pytest (2026-05-02)
 
 ### Original Problem Statement
-Plateforme SaaS juridique pour la constitution, la structuration, le partage et l'argumentation de dossiers juridiques, désormais commercialisée sous le nom **AlliéFile — Votre allié juridique intelligent**.
+Plateforme SaaS juridique pour la constitution, la structuration, le partage et l'argumentation de dossiers juridiques, commercialisée sous le nom **AlliéFile — Votre allié juridique intelligent**.
 
-### Mission "AlliéFile" — Livrée en un seul déploiement
-1. ✅ **Rebranding complet** de "Dossier Juridique Intelligent" → "AlliéFile — Votre allié juridique intelligent" (titres, emails, app, FastAPI metadata, header landing, 404).
-2. ✅ **Landing page publique** sur `/` avec Header, Hero, Comment ça marche, Avantages, Tarifs, CTA final, Footer.
-3. ✅ **Nouveaux plans** : Découverte (Gratuit), Essentiel (14,90€/mois — 149€/an), Pro (39,90€/mois — 399€/an).
-4. ✅ **SEO technique** : `<title>`, `<meta description>`, Open Graph, Twitter Card, canonical, JSON-LD `SoftwareApplication`, `lang="fr"`, `robots.txt`, `sitemap.xml`.
-5. ✅ **Email de bienvenue** à l'inscription via **Resend** (sender `bonjour@alliefile.com`), non-bloquant via BackgroundTasks FastAPI. Skip silencieux si `RESEND_API_KEY` absente (preview).
-6. ✅ **Page 404** avec bouton "Retour à l'accueil".
+---
 
-### Compatibilité plans existants
-- Les clés internes DB **`standard`** et **`premium`** sont conservées pour ne pas casser les utilisateurs existants.
-- Mappage public ↔ interne :
-  - `essentiel` ↔ `standard` (affiché "Essentiel" - 14,90€)
-  - `pro` ↔ `premium` (affiché "Pro" - 39,90€)
-- `payments.normalize_plan_id()` et `config.resolve_plan_key()` acceptent les deux formes en entrée.
+## Ce qui est livré (cumulé)
+
+### v1.3.0 — Mission AlliéFile (landing + rebranding + SEO + email)
+- ✅ Rebranding complet (app, FastAPI, 404, Dashboard, Pricing)
+- ✅ Landing page publique sur `/` (Header, Hero, 3 étapes, Avantages, Tarifs, CTA, Footer)
+- ✅ Page 404 sur route `*` avec bouton retour
+- ✅ Plans Découverte (0€) / **Essentiel 14,90€** / **Pro 39,90€** — alias essentiel/pro ↔ standard/premium (compat DB)
+- ✅ SEO technique : title, meta description, Open Graph, Twitter Card, canonical, JSON-LD, `lang="fr"`, robots.txt, sitemap.xml
+- ✅ Email de bienvenue via Resend (non-bloquant via BackgroundTasks, skip silencieux si clé absente)
+
+### v1.4.0 — Admin + Stripe production-ready + Tests
+- ✅ **Module admin backend** `/app/backend/admin.py` (gated par `ADMIN_EMAILS`)
+  - `GET /api/admin/me` — vérification accès
+  - `GET /api/admin/stats` — users, dossiers, pièces, revenu, transactions, promos
+  - `GET /api/admin/users?q=&plan=&limit=` — recherche users
+  - `PATCH /api/admin/users/{id}/plan` — changer le plan d'un user (accepte slugs publics)
+  - `GET/POST/DELETE /api/admin/promo-codes` — CRUD codes promo
+  - `GET /api/admin/transactions?status=` — historique paiements
+- ✅ **UI Admin** `/app/frontend/src/pages/Admin.jsx` — 4 onglets (Stats / Users / Promos / Transactions)
+- ✅ **Webhooks Stripe étendus** `/api/webhook/stripe` :
+  - `checkout.session.completed` → marque transaction payée + upgrade user plan
+  - `invoice.payment_succeeded` → étend la période
+  - `invoice.payment_failed` → flag user `past_due`
+  - `customer.subscription.deleted` → flag `canceled`
+  - `customer.subscription.updated` → MAJ plan
+- ✅ **Clés Stripe test** mises à jour dans `/app/backend/.env`
+- ✅ **Tests pytest** `/app/backend/tests/test_smoke.py` — 7/7 (health, plans, register, login, alias, admin 403, webhook)
+- ✅ **Testing agent itération_8** : 20/20 backend + 100% frontend
 
 ---
 
 ## Configuration Production
-- [x] MongoDB via Emergent (MONGO_URL)
-- [x] DB_NAME: justice-hub-45-alliefile
-- [x] **Stockage fichiers: Emergent Object Storage** (persistant, à NE PAS modifier)
-- [x] JWT_SECRET sécurisé, CORS configuré
-- [x] APP_ENV=production
-- [x] **Resend**: `RESEND_API_KEY` (prod uniquement — à configurer côté Emergent prod), `SENDER_EMAIL=bonjour@alliefile.com`
 
-## Fonctionnalités Complètes
-
-### Commerce
-- [x] Landing page publique `/` (non-auth)
-- [x] Plans: Découverte (gratuit) / Essentiel (14,90€) / Pro (39,90€)
-- [x] Intégration Stripe checkout (alias essentiel/pro supportés)
-- [x] Codes promo (ASSO100 = Premium)
-- [x] Page 404 `*`
-
-### SEO / Acquisition
-- [x] Meta title + description FR
-- [x] Open Graph + Twitter Card
-- [x] Canonical + lang="fr"
-- [x] JSON-LD SoftwareApplication (3 offers)
-- [x] robots.txt + sitemap.xml
-- [x] Google Analytics 4 (G-8H63PHT5SM) + PostHog
-
-### Emailing
-- [x] Email de bienvenue (HTML responsive) via Resend, non-bloquant, fire-and-forget
-- [x] Fallback silencieux si clé API absente (log INFO, ne casse pas l'inscription)
-
-### Stockage & Fichiers
-- [x] **Emergent Object Storage** (cloud persistant)
-- [x] Compute SHA256 pour matching des fichiers renommés (bulk re-upload)
-- [x] Bandeau "file_missing" sur chaque pièce
-- [x] Ré-upload unitaire (POST /api/pieces/{id}/reupload)
-- [x] Ré-upload en masse (POST /api/dossiers/{id}/pieces/bulk-reupload)
-
-### Core
-- [x] Création/gestion dossiers, upload pièces (PDF/images/DOCX/HEIC)
-- [x] Analyse IA (Gemini via Emergent LLM Key), chronologie, exposé des faits
-- [x] Partage sélectif avec lien sécurisé + expiration
-
-### Conformité
-- [x] CGU, Politique de confidentialité
-- [x] Consentement cookies
-- [x] Suppression compte différée (7j)
+### Variables d'environnement critiques
+| Variable | Scope | Notes |
+|---|---|---|
+| `MONGO_URL` | protégée | MongoDB Atlas |
+| `DB_NAME` | protégée | `justice-hub-45-alliefile` |
+| `STORAGE_BACKEND` | `emergent` | **NE PAS CHANGER** |
+| `JWT_SECRET` | requis prod | déjà configuré |
+| `CORS_ORIGINS` | requis prod | restriction domaine |
+| `EMERGENT_LLM_KEY` | requis | IA Gemini |
+| `STRIPE_API_KEY` | test en preview | sk_test_51TSahk... (**configurer prod**) |
+| `STRIPE_PUBLISHABLE_KEY` | test en preview | pk_test_51TSahk... |
+| `STRIPE_WEBHOOK_SECRET` | vide | à renseigner depuis dashboard Stripe |
+| `RESEND_API_KEY` | ⚠️ absent en preview | **à configurer en prod** |
+| `SENDER_EMAIL` | `bonjour@alliefile.com` | défaut |
+| `ADMIN_EMAILS` | comma-separated | accès `/admin` (ex: `admin@alliefile.com`) |
+| `BETA_ACCESS_CODE` | `ASSO100` | code beta premium |
 
 ---
 
 ## Architecture
 
-### Stack
-- **Frontend**: React + Shadcn/UI + React Router
-- **Backend**: FastAPI (Python)
-- **DB**: MongoDB (Emergent-managed)
-- **Stockage fichiers**: Emergent Object Storage
-- **IA**: Gemini via Emergent LLM Key
-- **Paiements**: Stripe
-- **Emailing**: Resend
-- **Analytics**: GA4 + PostHog
-
-### Fichiers clés
-- `/app/backend/server.py` — API monolithique (à découper P1)
-- `/app/backend/config.py` — PLANS + PLAN_ALIASES
-- `/app/backend/payments.py` — SUBSCRIPTION_PLANS + normalize_plan_id
-- `/app/backend/emailing.py` — Resend (send_welcome_email_background)
-- `/app/backend/storage.py` — EmergentObjectStorage
-- `/app/frontend/src/App.js` — Routage public/privé/404
-- `/app/frontend/src/pages/Landing.jsx` — Landing publique
-- `/app/frontend/src/pages/NotFound.jsx` — 404
-- `/app/frontend/src/pages/Pricing.jsx` — Essentiel/Pro
-- `/app/frontend/public/index.html` — Meta SEO
-- `/app/frontend/public/robots.txt`, `sitemap.xml`
-
----
-
-## API Endpoints Clés
-- `POST /api/auth/register` — crée user + envoie email bienvenue (BackgroundTasks)
-- `POST /api/auth/login` — login
-- `GET /api/payments/plans` — retourne les 2 plans publics (Essentiel/Pro)
-- `POST /api/payments/checkout` — accepte essentiel/pro ou standard/premium
-- `POST /api/payments/validate-promo` — idem
-- `POST /api/pieces/{id}/reupload` — ré-upload unitaire
-- `POST /api/dossiers/{id}/pieces/bulk-reupload` — ré-upload en masse avec matching SHA256
-
----
-
-## Testing
-- `/app/test_reports/iteration_7.json` — **100% backend (7/7) + 100% frontend (all critical flows)**
-- Testing agent a validé : landing, 404, inscription, login, pricing dynamique, SEO, alias de plans.
+```
+/app
+├── backend/
+│   ├── server.py           # API monolithique (~3000 lignes — refactoring P1 à venir)
+│   ├── admin.py            # ✅ Routes admin (register_admin_routes)
+│   ├── emailing.py         # ✅ Resend welcome email
+│   ├── payments.py         # SUBSCRIPTION_PLANS + normalize_plan_id
+│   ├── config.py           # PLAN_LIMITS + PLAN_ALIASES
+│   ├── storage.py          # EmergentObjectStorage (persistant)
+│   ├── rate_limiter.py     # Slowapi wrapper
+│   ├── security.py         # Middlewares
+│   ├── pytest.ini          # ✅ asyncio_mode=auto
+│   └── tests/
+│       ├── conftest.py     # ✅ base_url + unique_email fixtures
+│       └── test_smoke.py   # ✅ 7 tests contre backend live
+└── frontend/
+    ├── public/
+    │   ├── index.html      # SEO complet
+    │   ├── robots.txt      # ✅
+    │   └── sitemap.xml     # ✅
+    └── src/
+        ├── App.js          # Routes: /, /login, /register, /pricing, /cgu, /privacy, /dashboard, /dossier/:id, /admin, * (404)
+        ├── lib/api.js      # + adminApi
+        └── pages/
+            ├── Landing.jsx     # ✅
+            ├── NotFound.jsx    # ✅
+            ├── Admin.jsx       # ✅ (Stats/Users/Promos/Txs)
+            ├── Pricing.jsx     # Essentiel/Pro
+            ├── Dashboard.jsx
+            ├── DossierView.jsx
+            └── ...
+```
 
 ---
 
-## Backlog
+## Backlog restant
 
-### P0 (action côté utilisateur en prod)
-- [ ] **Configurer `RESEND_API_KEY` en prod** (variable d'env production Emergent)
-- [ ] **Vérifier le domaine `alliefile.com` dans Resend** (SPF/DKIM pour délivrabilité)
-- [ ] **Déployer en prod** pour activer le nouveau routage / landing / SEO
-- [ ] Fournir une vraie `og-image.png` (1200x630) dans `/app/frontend/public/`
+### ⚠️ Côté utilisateur en prod
+- [ ] **Configurer `RESEND_API_KEY`** en prod (sinon pas d'email de bienvenue)
+- [ ] Vérifier domaine `alliefile.com` dans Resend (SPF/DKIM)
+- [ ] **Configurer `ADMIN_EMAILS`** en prod (email admin)
+- [ ] **Configurer `STRIPE_WEBHOOK_SECRET`** en prod (Dashboard Stripe → webhooks → endpoint `https://alliefile.com/api/webhook/stripe`)
+- [ ] Migrer vers les vraies clés Stripe **live** (`sk_live_`, `pk_live_`) avant activation commerciale
+- [ ] Fournir vraie `og-image.png` (1200×630) dans `/app/frontend/public/`
 
-### P1 - Prioritaire
-- [ ] Refactoring `server.py` (~2900 lignes) en modules (auth, dossiers, pieces, analysis, sharing, payments_routes)
-- [ ] Interface d'administration (users, codes promo, transactions)
+### P1 - Prioritaire (session dédiée recommandée)
+- [ ] **Refactoring `server.py` (~3000 lignes)** en modules :
+  - `auth_routes.py` (register, login, me, stats)
+  - `dossiers_routes.py` (CRUD dossiers)
+  - `pieces_routes.py` (upload, analyze, validate, download, reupload)
+  - `sharing_routes.py` (share links)
+  - `payments_routes.py` (checkout, webhook, status, promo-codes public)
+  - `account_routes.py` (delete, cancel-deletion, beta/activate)
+  - Risque de régression élevé → demande une session dédiée avec tests pytest après chaque extraction
 
 ### P2 - Important
+- [ ] Étendre les tests pytest : dossiers CRUD, pieces upload/download, sharing, promo codes E2E
 - [ ] Optimisation N+1 queries sur `list_dossiers`
 - [ ] Refonte esthétique du Dashboard
-- [ ] Webhooks Stripe complets (annulation, renouvellement, échec paiement)
-- [ ] Tests pytest dans `/app/backend/tests`
+- [ ] Pagination sur `/admin/users` (actuellement limite 100)
+- [ ] Export CSV des transactions pour la compta
 
 ### P3 - Nice to have
 - [ ] PWA (mobile)
 - [ ] Blog SEO (content marketing)
 - [ ] Témoignages / études de cas sur la landing
 - [ ] Relance email si dossier non rempli après 48h
+- [ ] Dashboard admin avec graphes (revenu mensuel, conversion)
+- [ ] Tests E2E Playwright dans CI
+
+---
+
+## DB Schema
+- `users` : `{ id, email, name, password_hash, plan, plan_status, plan_expires_at, current_period_end, stripe_customer_id, assistant_uses_today, created_at }`
+- `dossiers` : `{ id, title, description, user_id, created_at, updated_at }`
+- `pieces` : `{ id, dossier_id, numero, filename, file_hash, file_size, file_missing, status, ai_proposal, validated_data }`
+- `share_links` : `{ id, dossier_id, token, expires_at, piece_ids }`
+- `payment_transactions` : `{ id, user_id, user_email, session_id, plan_id, billing_period, amount, currency, promo_code, discount_applied, status, created_at, updated_at }`
+- `promo_codes` : `{ id, code, discount_percent, discount_amount, max_uses, uses, expires_at, plan_restriction, created_at }`
+
+---
+
+## Testing
+- **Pytest backend** : `cd /app/backend && python -m pytest tests/ -v` — 7/7 (smoke)
+- **Testing agent iteration_8** : 20/20 backend + 100% frontend (admin + rebrand + webhooks)

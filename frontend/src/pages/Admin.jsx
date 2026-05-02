@@ -16,6 +16,10 @@ import {
   ShieldCheck, Users, Receipt, Ticket, BarChart3, Loader2, Trash2, Plus, RefreshCw,
 } from 'lucide-react';
 
+// Mapping clé interne -> libellé public
+const PLAN_LABEL = { free: 'Free', standard: 'Essentiel', premium: 'Pro' };
+const planLabel = (p) => PLAN_LABEL[p] || p;
+
 const AdminPage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -123,7 +127,7 @@ const StatsPanel = () => {
         <CardHeader><CardTitle className="text-base">Répartition par plan</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {Object.entries(stats.users_by_plan || {}).map(([plan, count]) => (
-            <Badge key={plan} variant="outline" data-testid={`admin-plan-${plan}`}>{plan}: {count}</Badge>
+            <Badge key={plan} variant="outline" data-testid={`admin-plan-${plan}`}>{planLabel(plan)}: {count}</Badge>
           ))}
         </CardContent>
       </Card>
@@ -185,7 +189,7 @@ const UsersPanel = () => {
                 <TableRow key={u.id} data-testid={`admin-user-row-${u.id}`}>
                   <TableCell className="text-sm">{u.email}</TableCell>
                   <TableCell className="text-sm">{u.name}</TableCell>
-                  <TableCell><Badge>{u.plan}</Badge></TableCell>
+                  <TableCell><Badge>{planLabel(u.plan)}</Badge></TableCell>
                   <TableCell className="text-xs text-slate-500">{u.plan_status || '—'}</TableCell>
                   <TableCell className="text-xs text-slate-500">{(u.created_at || '').slice(0, 10)}</TableCell>
                   <TableCell>
@@ -341,7 +345,7 @@ const TransactionsPanel = () => {
                 <TableRow key={t.id} data-testid={`admin-tx-row-${t.id}`}>
                   <TableCell className="text-xs">{(t.created_at || '').slice(0, 16).replace('T', ' ')}</TableCell>
                   <TableCell className="text-sm">{t.user_email}</TableCell>
-                  <TableCell><Badge variant="outline">{t.plan_id}</Badge></TableCell>
+                  <TableCell><Badge variant="outline">{planLabel(t.plan_id)}</Badge></TableCell>
                   <TableCell className="text-xs">{t.billing_period}</TableCell>
                   <TableCell className="text-sm">{t.amount} {t.currency?.toUpperCase()}</TableCell>
                   <TableCell>

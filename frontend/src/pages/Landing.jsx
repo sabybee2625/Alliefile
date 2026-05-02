@@ -1,9 +1,42 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Scale, Upload, Sparkles, Share2, Check, ArrowRight, Shield, Clock, FileText } from 'lucide-react';
+import axios from 'axios';
+import { Scale, Upload, Sparkles, Share2, Check, ArrowRight, Shield, Clock, FileText, Quote } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
+const TESTIMONIALS = [
+  {
+    initials: 'MT',
+    name: 'Marie T.',
+    context: 'Litige locatif',
+    quote: "AlliéFile m'a aidée à organiser tous mes échanges avec mon bailleur. La chronologie générée par l'IA m'a fait gagner un temps fou avant le rendez-vous avec mon avocat.",
+  },
+  {
+    initials: 'KB',
+    name: 'Karim B.',
+    context: 'Procédure de divorce',
+    quote: "Pouvoir partager un lien sécurisé à mon avocat avec toutes mes pièces classées, c'est précieux. Plus de pièces jointes éparpillées dans les emails.",
+  },
+  {
+    initials: 'AV',
+    name: 'Association AVEF',
+    context: 'Accompagnement victimes',
+    quote: "Nous l'utilisons pour structurer les dossiers des personnes que nous accompagnons. L'export PDF est nickel, et l'analyse IA repère ce qui manque.",
+  },
+];
+
 const Landing = () => {
+  const [dossierCount, setDossierCount] = useState(null);
+
+  useEffect(() => {
+    const apiUrl = process.env.REACT_APP_BACKEND_URL;
+    axios.get(`${apiUrl}/api/auth/stats`, { timeout: 4000 })
+      .then((r) => {
+        const n = r?.data?.total_dossiers;
+        if (typeof n === 'number' && n > 0) setDossierCount(n);
+      })
+      .catch(() => { /* fallback handled in render */ });
+  }, []);
   const plans = [
     {
       name: 'Découverte',
@@ -153,6 +186,39 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* Témoignages */}
+      <section className="py-20 px-4 bg-white" data-testid="landing-testimonials">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-3">
+            Ils utilisent AlliéFile
+          </h2>
+          <p className="text-center text-slate-500 text-sm mb-12">Trois exemples parmi nos utilisateurs.</p>
+          <div className="grid md:grid-cols-3 gap-6">
+            {TESTIMONIALS.map((t, i) => (
+              <figure
+                key={i}
+                className="relative bg-slate-50 border border-slate-200 rounded-sm p-6 flex flex-col"
+                data-testid={`landing-testimonial-${i}`}
+              >
+                <Quote className="w-5 h-5 text-sky-500 mb-3" />
+                <blockquote className="text-sm text-slate-700 leading-relaxed flex-1">
+                  « {t.quote} »
+                </blockquote>
+                <figcaption className="mt-5 flex items-center gap-3 pt-4 border-t border-slate-200">
+                  <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {t.initials}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{t.name}</div>
+                    <div className="text-xs text-slate-500">{t.context}</div>
+                  </div>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Avantages */}
       <section className="py-20 px-4">
         <div className="max-w-5xl mx-auto">
@@ -242,8 +308,10 @@ const Landing = () => {
           <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 mb-4">
             Prêt à organiser votre dossier ?
           </h2>
-          <p className="text-slate-600 mb-8">
-            Rejoignez les utilisateurs qui font confiance à AlliéFile pour préparer leurs dossiers juridiques.
+          <p className="text-slate-600 mb-8" data-testid="landing-counter">
+            {dossierCount !== null
+              ? `Déjà ${dossierCount.toLocaleString('fr-FR')} dossiers constitués par nos utilisateurs.`
+              : 'Rejoignez notre communauté.'}
           </p>
           <Link to="/register">
             <Button size="lg" className="bg-red-600 hover:bg-red-700 text-white px-8 h-12 text-base rounded-sm">

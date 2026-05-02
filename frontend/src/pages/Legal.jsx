@@ -42,9 +42,9 @@ export function CGU() {
       <Section title="5. Plans et Tarification">
         <p>Le Service propose différents plans d'abonnement :</p>
         <ul className="list-disc pl-6 mt-2 space-y-1">
-          <li><strong>Plan Gratuit :</strong> 1 dossier, 15 pièces maximum, fonctionnalités limitées</li>
-          <li><strong>Plan Standard :</strong> 5 dossiers, 500 pièces, fonctionnalités avancées</li>
-          <li><strong>Plan Premium :</strong> Dossiers illimités, toutes fonctionnalités</li>
+          <li><strong>Plan Gratuit :</strong> 1 dossier, 10 pièces maximum, fonctionnalités limitées</li>
+          <li><strong>Plan Essentiel :</strong> 5 dossiers, 500 pièces, fonctionnalités avancées</li>
+          <li><strong>Plan Pro :</strong> Dossiers illimités, toutes fonctionnalités</li>
         </ul>
         <p className="mt-2">
           Les tarifs sont indiqués en euros TTC et peuvent être modifiés à tout moment. Toute modification tarifaire 

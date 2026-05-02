@@ -45,6 +45,7 @@ from security import (
     validate_user_owns_resource
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage
+from admin import admin_required, is_admin
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -862,10 +863,9 @@ async def create_promo_code(
     max_uses: int = Body(-1),
     expires_at: Optional[str] = Body(None),
     plan_restriction: Optional[str] = Body(None),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(admin_required)
 ):
-    """Create a promo code (admin only in production)"""
-    # In production, add admin check here
+    """Create a promo code (admin only)"""
     
     now = datetime.now(timezone.utc).isoformat()
     promo_doc = {
@@ -2662,7 +2662,7 @@ app.add_middleware(
 async def startup_db_indexes():
     # Temporary migration endpoint
     @api_router.get("/migrate-from-atlas", summary="Migrate data from Atlas to Emergent DB (ONE-TIME USE)", tags=["Admin"])
-    async def migrate_data_from_atlas():
+    async def migrate_data_from_atlas(user: dict = Depends(admin_required)):
         logger.info("Migration endpoint triggered.")
         try:
             import subprocess

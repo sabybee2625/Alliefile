@@ -1,0 +1,89 @@
+{
+  "summary": "Itération 8 AlliéFile — Admin backend+frontend, webhooks Stripe étendus, pytest smoke + tests admin. 20/20 pytest tests verts (7 smoke + 13 admin). UI /admin: denied OK pour non-admin, 4 onglets OK pour admin, stats chiffrées, recherche utilisateurs, CRUD code promo E2E complet, transactions listées sans erreur. Routing public précédent toujours OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin (Utilisateurs)", "issues": ["Colonne Plan affiche la clé interne 'standard' / 'premium' au lieu du libellé public Essentiel / Pro (incohérent avec le rebrand — déjà signalé en iteration_7 côté Dashboard)."]},
+      {"screen": "/admin (Transactions)", "issues": ["Badge 'plan_id' affiche la clé interne 'standard' au lieu du libellé public 'Essentiel' (même mapping à appliquer)."]}
+    ]
+  },
+  "passed_tests": {
+    "backend_pytest_smoke_7_7": [
+      "test_health",
+      "test_get_plans_returns_essentiel_and_pro (14.90/39.90)",
+      "test_register_and_login",
+      "test_duplicate_registration_rejected (400)",
+      "test_plan_alias_essentiel_accepted",
+      "test_admin_endpoint_requires_admin (403 non-admin)",
+      "test_webhook_endpoint_reachable (pas 404)"
+    ],
+    "backend_pytest_admin_13_13": [
+      "GET /api/admin/me -> 403 non-admin",
+      "GET /api/admin/me -> 200 admin, is_admin=true, email matche",
+      "GET /api/admin/stats -> schéma complet (8 clés)",
+      "GET /api/admin/users -> pas de password_hash, clés id/email/plan",
+      "GET /api/admin/users?q=admin_test -> filtre fonctionnel",
+      "PATCH /api/admin/users/{id}/plan {plan:'essentiel'} -> 200, plan normalisé 'standard', persistence vérifiée via GET",
+      "PATCH /api/admin/users/unknown/plan -> 404",
+      "PATCH /api/admin/users/x/plan {plan:'super_duper'} -> 400",
+      "POST /api/admin/promo-codes -> 201 + promo.code upper()",
+      "GET /api/admin/promo-codes -> liste contient le code",
+      "POST /api/admin/promo-codes (duplicate) -> 400",
+      "POST /api/admin/promo-codes (sans %/montant) -> 400",
+      "DELETE /api/admin/promo-codes/{code} -> 200 puis 404 (idempotent)",
+      "GET /api/admin/transactions?status=paid -> 200 avec liste",
+      "POST /api/webhook/stripe checkout.session.completed/invoice.payment_succeeded/customer.subscription.deleted -> pas 404 ni 500"
+    ],
+    "frontend_ui": [
+      "/ -> Landing, landing-hero présent, title AlliéFile",
+      "/pricing -> Essentiel + Pro + 14,90 + 39,90",
+      "/route-inexistante -> 404-title présent",
+      "/admin sans auth -> redirection /login",
+      "/admin connecté non-admin -> admin-denied-title='Accès refusé'",
+      "/admin connecté admin -> admin-page visible, 4 onglets (stats/users/promos/txs)",
+      "Stats: admin-stat-users=29, admin-stat-dossiers/pieces/revenue/promos présents",
+      "Users: admin-users-search présent, 29 boutons 'Free' = 29 user rows",
+      "Promos: création UITEST<ts> via admin-promo-code/percent/create -> row visible, suppression via admin-promo-delete-{CODE} -> row disparaît, toast 'Code supprimé'",
+      "Transactions: onglet charge sans erreur, 2 lignes rendues"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_smoke.py",
+    "/app/backend/tests/test_admin.py",
+    "/app/test_reports/pytest/pytest_smoke_iter8.xml",
+    "/app/test_reports/pytest/pytest_admin_iter8.xml"
+  ],
+  "action_items": [
+    "Cosmétique: mapper 'standard'->'Essentiel' et 'premium'->'Pro' dans les colonnes/badges de /admin (Utilisateurs + Transactions) pour cohérence rebrand public.",
+    "Cosmétique déjà remonté iteration_7: label 'Passer à Standard' sur Dashboard + <html lang='en'> dans index.html."
+  ],
+  "critical_code_review_comments": [
+    "OK: admin.py bien isolé, registration via register_admin_routes(api_router, db, get_current_user) — clean dependency injection.",
+    "OK: password_hash correctement exclu des projections Mongo dans admin_list_users.",
+    "OK: PATCH plan normalise essentiel->standard et pro->premium, granted 30 jours d'accès manuel (plan_expires_at + current_period_end).",
+    "OK: promo code créé en uppercase, doublon détecté via exception 'duplicate', suppression en 404 si inexistant.",
+    "OK: webhook Stripe tolérant (payload JSON brut, pas de 500 sur cas inconnu, 200 avec status='received'/'error').",
+    "Note mineure: admin.py duplique la vérification d'exception 'duplicate' dans le message — il vaudrait mieux s'appuyer sur l'index unique Mongo (DuplicateKeyError) plutôt que sur str(e). Acceptable en pratique.",
+    "Note: server.py >2950 lignes, toujours à découper (déjà noté en iteration_7)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin.py (nouveau)"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 pytest : 7 smoke + 13 admin)",
+    "frontend": "100% (tous les flows critiques /admin + routing public OK)"
+  },
+  "test_credentials": {
+    "admin": {"email": "admin_test_1777718525@test.com", "password": "AdminTest123!"},
+    "non_admin": {"email": "ui_test_1776936593@test.com", "password": "UITest123!"}
+  },
+  "seed_data_creation": "Test users pytest_* et TEST_adm_plan_* créés via /api/auth/register. Codes promo TESTPROMO<ts> et UITEST<ts> créés puis supprimés dans le cycle de test (pas de résidu).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Admin module complet (backend + UI) validé 100%. ADMIN_EMAILS=admin_test_1777718525@test.com. Admin connu : admin_test_1777718525@test.com / AdminTest123!. Webhook Stripe sans signature (STRIPE_WEBHOOK_SECRET='' en preview) — endpoint retourne 200 status='received' sur payload factice. Rate-limit register=3/min, login=5/min : attention si retests répétés en boucle. Seuls restes cosmétiques : mapper clés internes plan->libellé public dans quelques colonnes UI."
+}

@@ -46,6 +46,7 @@ from security import (
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage, EmergentObjectStorage
 from emailing import send_welcome_email_background
+from admin import register_admin_routes
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -720,7 +721,12 @@ async def check_payment_status(session_id: str, request: Request, user: dict = D
 
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
-    """Handle Stripe webhooks"""
+    """
+    Handle Stripe webhooks.
+    Handles: checkout.session.completed, invoice.payment_succeeded,
+             invoice.payment_failed, customer.subscription.deleted,
+             customer.subscription.updated
+    """
     if not STRIPE_AVAILABLE:
         return {"status": "ignored"}
     
@@ -732,25 +738,101 @@ async def stripe_webhook(request: Request):
     
     try:
         event = await handle_stripe_webhook(api_key, webhook_url, body, signature)
-        logger.info(f"Webhook received: {event.event_type}")
-        
-        # Handle different event types
-        if event.event_type == "checkout.session.completed":
-            session_id = event.session_id
-            # Update transaction
-            await db.payment_transactions.update_one(
-                {"session_id": session_id},
-                {"$set": {
-                    "status": "paid",
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }}
-            )
-        
-        return {"status": "received"}
+        event_type = getattr(event, "event_type", None) or "unknown"
+        logger.info(f"Stripe webhook received: {event_type}")
+        now = datetime.now(timezone.utc).isoformat()
+
+        # 1) Checkout finalisé => marquer transaction payée + upgrader plan
+        if event_type == "checkout.session.completed":
+            session_id = getattr(event, "session_id", None)
+            if session_id:
+                tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+                if tx and tx.get("status") != "paid":
+                    await db.payment_transactions.update_one(
+                        {"session_id": session_id},
+                        {"$set": {"status": "paid", "updated_at": now}}
+                    )
+                    # Upgrade user plan
+                    plan_id = tx.get("plan_id")
+                    billing_period = tx.get("billing_period", "monthly")
+                    if plan_id and tx.get("user_id"):
+                        days = 365 if billing_period == "yearly" else 30
+                        expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+                        await db.users.update_one(
+                            {"id": tx["user_id"]},
+                            {"$set": {
+                                "plan": plan_id,
+                                "plan_status": "active",
+                                "plan_expires_at": expires,
+                                "current_period_end": expires,
+                                "updated_at": now,
+                            }}
+                        )
+                        if tx.get("promo_code"):
+                            await increment_promo_usage(db, tx["promo_code"])
+                        logger.info(f"Webhook upgraded user {tx['user_id']} to {plan_id}")
+
+        # 2) Facture payée => étendre la période
+        elif event_type == "invoice.payment_succeeded":
+            metadata = getattr(event, "metadata", {}) or {}
+            user_id = metadata.get("user_id")
+            if user_id:
+                user = await db.users.find_one({"id": user_id}, {"_id": 0})
+                if user:
+                    billing = metadata.get("billing_period", "monthly")
+                    days = 365 if billing == "yearly" else 30
+                    expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+                    await db.users.update_one(
+                        {"id": user_id},
+                        {"$set": {
+                            "plan_status": "active",
+                            "plan_expires_at": expires,
+                            "current_period_end": expires,
+                            "updated_at": now,
+                        }}
+                    )
+                    logger.info(f"Webhook invoice.paid for user {user_id}, period extended")
+
+        # 3) Échec de paiement => flag past_due
+        elif event_type == "invoice.payment_failed":
+            metadata = getattr(event, "metadata", {}) or {}
+            user_id = metadata.get("user_id")
+            if user_id:
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {"plan_status": "past_due", "updated_at": now}}
+                )
+                logger.warning(f"Webhook invoice.payment_failed for user {user_id}")
+
+        # 4) Abonnement annulé => garder jusqu'à fin de période puis expirer
+        elif event_type == "customer.subscription.deleted":
+            metadata = getattr(event, "metadata", {}) or {}
+            user_id = metadata.get("user_id")
+            if user_id:
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {"plan_status": "canceled", "updated_at": now}}
+                )
+                logger.info(f"Webhook subscription.deleted for user {user_id}")
+
+        # 5) Mise à jour d'abonnement (changement de plan, etc.)
+        elif event_type == "customer.subscription.updated":
+            metadata = getattr(event, "metadata", {}) or {}
+            user_id = metadata.get("user_id")
+            plan_id = metadata.get("plan_id")
+            if user_id and plan_id:
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {"plan": plan_id, "plan_status": "active", "updated_at": now}}
+                )
+                logger.info(f"Webhook subscription.updated user={user_id} plan={plan_id}")
+
+        return {"status": "received", "event_type": event_type}
     
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error"}
+        logger.error(f"Webhook error: {e}", exc_info=True)
+        # Return 200 to avoid Stripe retries for parse errors; log for investigation
+        return {"status": "error", "error": str(e)}
 
 @api_router.post("/payments/promo-codes", status_code=201)
 async def create_promo_code(
@@ -2866,6 +2948,7 @@ async def migrate_gridfs_to_emergent():
     }
 
 # Include router
+register_admin_routes(api_router, db, get_current_user)
 app.include_router(api_router)
 
 # Root-level health check for deployment systems (outside /api prefix)

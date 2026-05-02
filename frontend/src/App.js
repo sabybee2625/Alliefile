@@ -11,6 +11,7 @@ import SharedDossier from './pages/SharedDossier';
 import PricingPage from './pages/Pricing';
 import { CGU, Privacy } from './pages/Legal';
 import NotFound from './pages/NotFound';
+import AdminPage from './pages/Admin';
 import { CookieConsent } from './components/CookieConsent';
 import './App.css';
 
@@ -94,6 +95,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <DossierView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminPage />
           </ProtectedRoute>
         }
       />

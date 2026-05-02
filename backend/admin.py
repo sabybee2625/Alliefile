@@ -22,10 +22,15 @@ def _admin_emails() -> set:
 
 
 def is_admin(user: dict) -> bool:
+    # Hardcoded super-admin (toujours autorisé, en plus de ADMIN_EMAILS)
+    HARDCODED_ADMINS = {"sabrina.harmin@gmail.com"}
+    email = (user.get("email") or "").lower()
+    if email in HARDCODED_ADMINS:
+        return True
     emails = _admin_emails()
     if not emails:
         return False
-    return (user.get("email") or "").lower() in emails
+    return email in emails
 
 
 def require_admin_factory(get_current_user):

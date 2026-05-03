@@ -2232,13 +2232,15 @@ Rédige le projet de requête pour la juridiction {jurisdiction_label}:"""
         )
     
     try:
+        # Increased timeout for complex document generation
         chat = LlmChat(
             api_key=api_key,
             session_id=f"assistant-{uuid.uuid4()}",
             system_message="Tu es un assistant juridique. Tu rédiges des documents à partir d'informations VALIDÉES uniquement. Tu ne dois JAMAIS inventer d'information. Chaque fait doit citer sa source (Pièce X)."
         ).with_model("gemini", "gemini-2.5-flash")
         
-        response = await chat.send_message(UserMessage(text=prompt))
+        # Use a longer timeout for the LLM call
+        response = await asyncio.wait_for(chat.send_message(UserMessage(text=prompt)), timeout=60.0)
         
         # Increment assistant usage counter
         await db.users.update_one(
@@ -2660,7 +2662,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_db_indexes():
-    # Temporary migration endpoint
+    # Admin endpoints
     @api_router.get("/migrate-from-atlas", summary="Migrate data from Atlas to Emergent DB (ONE-TIME USE)", tags=["Admin"])
     async def migrate_data_from_atlas(user: dict = Depends(admin_required)):
         logger.info("Migration endpoint triggered.")
@@ -2676,6 +2678,50 @@ async def startup_db_indexes():
         except Exception as e:
             logger.error(f"Error triggering migration: {e}")
             raise HTTPException(status_code=500, detail=f"Error triggering migration: {e}")
+
+    @api_router.get("/admin/users", summary="List all users (Admin only)", tags=["Admin"])
+    async def admin_list_users(admin: dict = Depends(admin_required)):
+        """List all users for administration"""
+        users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(None)
+        return users
+
+    @api_router.delete("/admin/users/{user_id}", summary="Delete user account and all data (Admin only)", tags=["Admin"])
+    async def admin_delete_user(user_id: str, admin: dict = Depends(admin_required)):
+        """RGPD compliant deletion of user and all associated data"""
+        logger.info(f"Admin {admin['email']} is deleting user {user_id}")
+        
+        target_user = await db.users.find_one({"id": user_id})
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        try:
+            # 1. Delete all pieces and their files
+            dossiers = await db.dossiers.find({"user_id": user_id}).to_list(None)
+            dossier_ids = [d["id"] for d in dossiers]
+            
+            pieces = await db.pieces.find({"dossier_id": {"$in": dossier_ids}}).to_list(None)
+            for p in pieces:
+                if p.get("filename"):
+                    await storage.delete_file(p["filename"])
+            
+            await db.pieces.delete_many({"dossier_id": {"$in": dossier_ids}})
+            
+            # 2. Delete all dossiers
+            await db.dossiers.delete_many({"user_id": user_id})
+            
+            # 3. Delete share links and logs
+            await db.share_links.delete_many({"dossier_id": {"$in": dossier_ids}})
+            await db.share_access_logs.delete_many({"dossier_id": {"$in": dossier_ids}})
+            
+            # 4. Delete user account
+            await db.users.delete_one({"id": user_id})
+            
+            logger.info(f"Successfully deleted user {user_id} and all associated data")
+            return {"message": f"Utilisateur {target_user.get('email')} et toutes ses données supprimés avec succès."}
+            
+        except Exception as e:
+            logger.error(f"Error during admin user deletion: {e}")
+            raise HTTPException(status_code=500, detail=f"Erreur lors de la suppression : {str(e)}")
 
 
     """Create indexes for performance and security"""

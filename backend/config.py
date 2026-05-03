@@ -52,8 +52,8 @@ class Config:
         self.ATLAS_MONGO_URL = "mongodb+srv://forsaby_db_user:sousou@alliefile-dossier.u4ejts9.mongodb.net/alliefile?retryWrites=true&w=majority"
         self.ATLAS_DB_NAME = "alliefile"
         
-        # Storage - Default to local to avoid startup connection to Atlas
-        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "local"))
+        # Storage - Default to GridFS for persistence
+        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "gridfs"))
         self.UPLOAD_DIR = self.ROOT_DIR / "uploads"
         self.EXPORTS_DIR = self.ROOT_DIR / "exports"
         

@@ -143,11 +143,9 @@ class GridFSStorage(StorageBackend):
         
     async def save_file(self, content: bytes, filename: str, folder: str = "") -> str:
         bucket = await self._get_bucket()
-        # GridFS uses filename as the identifier, or we can use the returned ID
-        # For compatibility with the current app, we'll use the filename
-        grid_in = await bucket.open_upload_stream(filename)
-        await grid_in.write(content)
-        await grid_in.close()
+        # GridFS uses filename as the identifier
+        async with bucket.open_upload_stream(filename) as grid_in:
+            await grid_in.write(content)
         return filename
         
     async def get_file(self, path: str) -> bytes:

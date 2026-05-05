@@ -2636,6 +2636,32 @@ async def health():
         "s3_configured": config.is_s3_configured
     }
 
+@api_router.get("/public/stats", summary="Public statistics (no auth required)")
+async def public_stats():
+    """Return public statistics about the platform - no authentication required"""
+    try:
+        # Count total dossiers
+        total_dossiers = await db.dossiers.count_documents({})
+        # Count total users
+        total_users = await db.users.count_documents({})
+        # Count total pieces
+        total_pieces = await db.pieces.count_documents({})
+        
+        return {
+            "total_dossiers": total_dossiers,
+            "total_users": total_users,
+            "total_pieces": total_pieces,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching public stats: {e}")
+        return {
+            "total_dossiers": 0,
+            "total_users": 0,
+            "total_pieces": 0,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
 # Include router
 app.include_router(api_router)
 

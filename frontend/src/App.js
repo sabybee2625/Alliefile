@@ -9,12 +9,17 @@ import DossierView from './pages/DossierView';
 import SharedDossier from './pages/SharedDossier';
 import PricingPage from './pages/Pricing';
 import AdminPage from './pages/Admin';
+import LandingPage from './pages/Landing';
+import NotFound from './pages/NotFound';
 import { CGU, Privacy } from './pages/Legal';
 import { CookieConsent } from './components/CookieConsent';
 import './App.css';
 
+// Admin list (hardcoded)
+const ADMIN_EMAILS = ['sabrina.harmin@gmail.com'];
+
 // Protected route wrapper
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, path }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -27,6 +32,11 @@ const ProtectedRoute = ({ children }) => {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Admin route protection
+  if (path && path.includes('/admin') && !ADMIN_EMAILS.includes(user.email)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -104,15 +114,17 @@ function AppRoutes() {
       <Route
         path="/admin"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute path="/admin">
             <AdminPage />
           </ProtectedRoute>
         }
       />
 
-      {/* Default redirect */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Landing page (public) */}
+      <Route path="/" element={<LandingPage />} />
+
+      {/* Fallback */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

@@ -51,7 +51,7 @@ const Register = () => {
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="flex items-center justify-center gap-3 mb-8">
+        <a href="/" className="flex items-center justify-center gap-3 mb-8">
           <div className="w-12 h-12 bg-slate-900 rounded-sm flex items-center justify-center">
             <Scale className="w-6 h-6 text-white" />
           </div>
@@ -61,7 +61,7 @@ const Register = () => {
             </h1>
             <p className="text-sm text-slate-500">Intelligent</p>
           </div>
-        </div>
+        </a>
 
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="space-y-1 pb-4">

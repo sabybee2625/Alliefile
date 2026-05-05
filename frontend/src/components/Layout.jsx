@@ -28,14 +28,14 @@ export const Layout = ({ children }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link to="/dashboard" className="flex items-center gap-2 group" data-testid="logo-link">
+            <a href="/" className="flex items-center gap-2 group" data-testid="logo-link">
               <div className="w-8 h-8 bg-slate-900 rounded-sm flex items-center justify-center">
                 <Scale className="w-4 h-4 text-white" />
               </div>
               <span className="font-heading font-bold text-lg text-slate-900 tracking-tight">
                 Dossier Juridique
               </span>
-            </Link>
+            </a>
 
             {/* Navigation */}
             {user && (

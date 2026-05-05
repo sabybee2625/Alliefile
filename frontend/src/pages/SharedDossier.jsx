@@ -98,12 +98,12 @@ const SharedDossier = () => {
       <header className="bg-white border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2">
+            <a href="/" className="flex items-center gap-2 group">
               <div className="w-8 h-8 bg-slate-900 rounded-sm flex items-center justify-center">
                 <Scale className="w-4 h-4 text-white" />
               </div>
               <span className="font-heading font-bold text-lg text-slate-900">Dossier Juridique</span>
-            </div>
+            </a>
             <Badge variant="outline" className="flex items-center gap-1">
               <Lock className="w-3 h-3" />
               Lecture seule

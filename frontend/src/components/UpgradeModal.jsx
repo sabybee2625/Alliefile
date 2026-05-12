@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
-import { Crown, ArrowRight } from 'lucide-react';
+import { Sparkles, ArrowRight } from 'lucide-react';
 
 /**
  * Modal d'upsell vers le plan Essentiel.
@@ -16,11 +16,11 @@ import { Crown, ArrowRight } from 'lucide-react';
 const FEATURE_COPY = {
   export_pdf: {
     title: 'Passez au niveau supérieur',
-    message: "Pour télécharger votre dossier complet en PDF et débloquer la rédaction illimitée, passez au forfait Essentiel.",
+    message: "Pour télécharger votre dossier complet en PDF, passez au forfait Essentiel.",
   },
   export_docx: {
     title: 'Passez au niveau supérieur',
-    message: "Pour exporter votre dossier au format DOCX éditable et débloquer la rédaction illimitée, passez au forfait Essentiel.",
+    message: "Pour exporter votre dossier au format DOCX éditable, passez au forfait Essentiel.",
   },
   assistant_per_dossier: {
     title: 'Vous avez déjà utilisé votre exposé des faits',
@@ -49,8 +49,8 @@ export const UpgradeModal = ({ open, onOpenChange, feature, title, message }) =>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" data-testid="upgrade-modal">
         <DialogHeader>
-          <div className="w-12 h-12 rounded-sm bg-amber-50 flex items-center justify-center mb-3 mx-auto">
-            <Crown className="w-6 h-6 text-amber-500" />
+          <div className="w-12 h-12 rounded-sm bg-sky-50 flex items-center justify-center mb-3 mx-auto">
+            <Sparkles className="w-6 h-6 text-sky-600" />
           </div>
           <DialogTitle className="text-center text-xl font-heading" data-testid="upgrade-modal-title">
             {title || copy.title}
@@ -62,10 +62,10 @@ export const UpgradeModal = ({ open, onOpenChange, feature, title, message }) =>
         <div className="flex flex-col sm:flex-row-reverse gap-2 mt-4">
           <Button
             onClick={handleUpgrade}
-            className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-white rounded-sm"
+            className="w-full sm:w-auto bg-sky-600 hover:bg-sky-700 text-white rounded-sm"
             data-testid="upgrade-modal-cta"
           >
-            Devenir Premium
+            Passer à Essentiel
             <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
           <Button

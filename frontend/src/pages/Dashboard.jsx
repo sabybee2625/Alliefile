@@ -63,7 +63,7 @@ const BetaCodeSection = ({ onActivated }) => {
     setLoading(true);
     try {
       await userApi.activateBetaCode(code.trim());
-      toast.success('Code activé ! Vous avez maintenant un accès Premium.');
+      toast.success('Code activé ! Vous avez maintenant un accès Sérénité.');
       setCode('');
       onActivated();
     } catch (error) {
@@ -282,7 +282,7 @@ const Dashboard = () => {
                     size="sm"
                   >
                     <Crown className="w-4 h-4 mr-2" />
-                    Passer à Premium
+                    Passer à Sérénité
                   </Button>
                 )}
               </div>

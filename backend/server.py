@@ -358,7 +358,7 @@ async def check_plan_limit(user: dict, limit_type: str, current_count: int = 0) 
             status_code=403,
             detail={
                 "error": "PLAN_LIMIT_EXCEEDED",
-                "message": f"Limite du plan {plan.upper()} atteinte : {label}. Passez à un plan supérieur pour continuer.",
+                "message": f"Limite atteinte : {label}. Passez au plan Essentiel pour continuer.",
                 "plan": plan,
                 "limit_type": limit_type,
                 "current": current_count,

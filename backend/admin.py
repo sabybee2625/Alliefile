@@ -268,6 +268,56 @@ def register_admin_routes(api_router, db, get_current_user):
             items.append(t)
         return {"transactions": items}
 
+    @api_router.post("/admin/transactions/{tx_id}/mark-paid")
+    async def admin_mark_transaction_paid(
+        tx_id: str,
+        _: dict = Depends(require_admin),
+    ):
+        """Marquer manuellement une transaction comme payée ET upgrader le user (cas où Stripe a encaissé mais le webhook/polling a échoué)."""
+        tx = await db.payment_transactions.find_one({"id": tx_id}, {"_id": 0})
+        if not tx:
+            raise HTTPException(status_code=404, detail="Transaction introuvable")
+
+        from datetime import timedelta
+        now = datetime.now(timezone.utc).isoformat()
+        await db.payment_transactions.update_one(
+            {"id": tx_id},
+            {"$set": {"status": "paid", "updated_at": now, "force_paid_by_admin": True}}
+        )
+
+        # Upgrade user plan
+        plan_id = tx.get("plan_id")
+        user_id = tx.get("user_id")
+        billing_period = tx.get("billing_period", "monthly")
+        if user_id and plan_id:
+            # Normalize public slugs
+            plan_map = {"essentiel": "standard", "pro": "premium", "serenite": "premium"}
+            plan_id = plan_map.get(plan_id, plan_id)
+            days = 365 if billing_period == "yearly" else 30
+            expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+            await db.users.update_one(
+                {"id": user_id},
+                {"$set": {
+                    "plan": plan_id,
+                    "plan_status": "active",
+                    "plan_expires_at": expires,
+                    "current_period_end": expires,
+                    "updated_at": now,
+                }}
+            )
+        logger.info(f"Admin forced paid tx={tx_id} user={user_id} plan={plan_id}")
+        return {"ok": True, "plan": plan_id}
+
+    @api_router.delete("/admin/transactions/{tx_id}")
+    async def admin_delete_transaction(
+        tx_id: str,
+        _: dict = Depends(require_admin),
+    ):
+        result = await db.payment_transactions.delete_one({"id": tx_id})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Transaction introuvable")
+        return {"ok": True}
+
     @api_router.get("/admin/me")
     async def admin_me(user: dict = Depends(require_admin)):
         return {"email": user["email"], "is_admin": True}

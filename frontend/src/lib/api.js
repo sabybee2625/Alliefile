@@ -184,6 +184,8 @@ export const adminApi = {
   createPromo: (data) => api.post('/admin/promo-codes', data),
   deletePromo: (code) => api.delete(`/admin/promo-codes/${code}`),
   listTransactions: (params = {}) => api.get('/admin/transactions', { params }),
+  markTransactionPaid: (txId) => api.post(`/admin/transactions/${txId}/mark-paid`),
+  deleteTransaction: (txId) => api.delete(`/admin/transactions/${txId}`),
 };
 
 export default api;

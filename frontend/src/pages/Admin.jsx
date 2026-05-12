@@ -341,6 +341,28 @@ const TransactionsPanel = () => {
   };
   useEffect(() => { load(); }, []);
 
+  const markPaid = async (txId) => {
+    if (!window.confirm("Forcer cette transaction à 'payée' et upgrader le plan de l'utilisateur ? À n'utiliser que si Stripe a bien encaissé le paiement.")) return;
+    try {
+      await adminApi.markTransactionPaid(txId);
+      toast.success('Transaction marquée payée et plan upgradé');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erreur');
+    }
+  };
+
+  const remove = async (txId) => {
+    if (!window.confirm('Supprimer cette transaction ?')) return;
+    try {
+      await adminApi.deleteTransaction(txId);
+      toast.success('Transaction supprimée');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erreur');
+    }
+  };
+
   return (
     <div className="mt-6">
       {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
@@ -354,6 +376,7 @@ const TransactionsPanel = () => {
                 <TableHead>Période</TableHead>
                 <TableHead>Montant</TableHead>
                 <TableHead>Statut</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -369,10 +392,34 @@ const TransactionsPanel = () => {
                       {t.status}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 items-center">
+                      {t.status !== 'paid' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+                          onClick={() => markPaid(t.id)}
+                          data-testid={`admin-tx-${t.id}-mark-paid`}
+                        >
+                          Forcer payé
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-500 hover:text-red-700"
+                        onClick={() => remove(t.id)}
+                        data-testid={`admin-tx-${t.id}-delete`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
               {txs.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-slate-400 py-8">Aucune transaction</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-slate-400 py-8">Aucune transaction</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

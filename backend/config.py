@@ -52,7 +52,9 @@ class Config:
         self.DB_NAME = os.environ.get("DB_NAME", "legal_dossier_db")
         
         # Storage
-        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "local"))
+        # IMPORTANT: default is "gridfs" (MongoDB) so files survive redeployments
+        # even if the STORAGE_BACKEND env var is not explicitly configured in prod.
+        self.STORAGE_BACKEND = StorageBackend(os.environ.get("STORAGE_BACKEND", "gridfs"))
         self.UPLOAD_DIR = self.ROOT_DIR / "uploads"
         self.EXPORTS_DIR = self.ROOT_DIR / "exports"
         

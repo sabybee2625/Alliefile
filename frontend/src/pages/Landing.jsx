@@ -32,7 +32,7 @@ const FAQ = [
   },
   {
     q: 'Comment fonctionne l\'analyse IA ?',
-    a: "Claude analyse chaque document que vous déposez et structure automatiquement votre dossier : type de pièce, date, parties, résumé, mots-clés et chronologie. Vous n'avez plus qu'à valider.",
+    a: "Notre IA analyse chaque document que vous déposez et structure automatiquement votre dossier : type de pièce, date, parties, résumé, mots-clés et chronologie. Vous n'avez plus qu'à valider.",
   },
   {
     q: 'Mes documents sont-ils sécurisés ?',
@@ -41,15 +41,15 @@ const FAQ = [
 ];
 
 const Landing = () => {
-  const [dossierCount, setDossierCount] = useState(null);
+  const [userCount, setUserCount] = useState(null);
   const [openFaq, setOpenFaq] = useState(0);
 
   useEffect(() => {
     const apiUrl = process.env.REACT_APP_BACKEND_URL;
     axios.get(`${apiUrl}/api/public/stats`, { timeout: 4000 })
       .then((r) => {
-        const n = r?.data?.total_dossiers;
-        if (typeof n === 'number' && n > 0) setDossierCount(n);
+        const n = r?.data?.total_users;
+        if (typeof n === 'number' && n > 0) setUserCount(n);
       })
       .catch(() => { /* fallback handled in render */ });
   }, []);
@@ -148,9 +148,9 @@ const Landing = () => {
             Sécurisé et confidentiel
           </div>
           <div className="mb-8" data-testid="landing-hero-counter">
-            {dossierCount !== null ? (
+            {userCount !== null ? (
               <span className="text-sm text-slate-500">
-                Déjà <strong className="text-slate-900">{dossierCount.toLocaleString('fr-FR')}</strong> dossiers constitués par nos utilisateurs.
+                Déjà <strong className="text-slate-900">{userCount.toLocaleString('fr-FR')}</strong> personnes nous font confiance.
               </span>
             ) : (
               <span className="text-sm text-slate-400">Rejoignez notre communauté.</span>
@@ -374,8 +374,8 @@ const Landing = () => {
             Prêt à organiser votre dossier ?
           </h2>
           <p className="text-slate-600 mb-8" data-testid="landing-counter">
-            {dossierCount !== null
-              ? `Déjà ${dossierCount.toLocaleString('fr-FR')} dossiers constitués par nos utilisateurs.`
+            {userCount !== null
+              ? `Déjà ${userCount.toLocaleString('fr-FR')} personnes nous font confiance.`
               : 'Rejoignez notre communauté.'}
           </p>
           <Link to="/register">

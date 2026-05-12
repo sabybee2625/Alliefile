@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Scale, Upload, Sparkles, Share2, Check, ArrowRight, Shield, Clock, FileText, Quote, ChevronDown } from 'lucide-react';
-import { Button } from '../components/ui/button';
+import {
+  Scale, ShieldCheck, Sparkles, FileText, UserRound,
+  Check, X, Quote, ChevronDown, Clock, Calendar, Brain,
+} from 'lucide-react';
+
+const NAVY = '#1E3A5F';
+const NAVY_DEEP = '#0F172A';
+const GOLD = '#B8960C';
+const CTA_RED = '#DC2626';
 
 const TESTIMONIALS = [
   {
@@ -31,12 +38,87 @@ const FAQ = [
     a: "Oui, sans préavis. L'annulation est immédiate depuis votre tableau de bord, et vous conservez l'accès jusqu'à la fin de votre période de facturation.",
   },
   {
-    q: 'Comment fonctionne l\'analyse IA ?',
+    q: "Comment fonctionne l'analyse IA ?",
     a: "Notre IA analyse chaque document que vous déposez et structure automatiquement votre dossier : type de pièce, date, parties, résumé, mots-clés et chronologie. Vous n'avez plus qu'à valider.",
   },
   {
     q: 'Mes documents sont-ils sécurisés ?',
     a: "Oui. Vos documents sont chiffrés et stockés sur des serveurs sécurisés en Europe. Seul vous (et les destinataires que vous choisissez via vos liens de partage) y avez accès.",
+  },
+];
+
+const PAINS = [
+  'Des dizaines de PDF, captures et mails éparpillés sur 3 appareils différents.',
+  "Vous perdez du temps à chercher LA pièce que votre avocat vous demande, en pleine procédure.",
+  "Vous payez votre avocat à l'heure pour qu'il trie ce que vous auriez pu organiser vous-même.",
+];
+
+const SOLUTIONS = [
+  'Tous vos documents au même endroit, classés automatiquement par l\'IA.',
+  "Une chronologie claire et un exposé des faits prêt à l'emploi en 5 minutes.",
+  "Un lien sécurisé à envoyer à votre avocat : il a tout, sans aller-retours d'emails.",
+];
+
+const SAVINGS = [
+  {
+    icon: Clock,
+    title: 'Moins d\'heures facturées',
+    desc: "Votre avocat n'a plus à trier vos pièces : il facture du conseil, pas du classement.",
+  },
+  {
+    icon: Calendar,
+    title: 'Rendez-vous mieux préparés',
+    desc: "Vous arrivez avec un dossier structuré, vous gagnez du temps et vous êtes plus crédible.",
+  },
+  {
+    icon: Brain,
+    title: 'Charge mentale réduite',
+    desc: "Plus de panique à 23h pour retrouver une attestation. Tout est là, prêt à être consulté.",
+  },
+];
+
+const STEPS = [
+  { n: '01', title: 'Déposez vos documents', desc: 'PDF, photos, captures, courriers… tout est accepté.' },
+  { n: '02', title: 'L\'IA structure votre dossier', desc: 'Type, date, parties, résumé, chronologie : automatique.' },
+  { n: '03', title: 'Partagez à votre avocat', desc: 'Un lien sécurisé, et il accède au dossier complet.' },
+];
+
+const PLANS = [
+  {
+    name: 'Découverte',
+    price: 'Gratuit',
+    period: '',
+    description: 'Testez AlliéFile sans engagement',
+    features: ['1 dossier', '15 pièces', '3 liens de partage', 'Analyse IA', 'Export PDF', '1 courrier/jour'],
+    border: 'border-slate-300',
+    cta: 'Commencer gratuitement',
+    btnClass: 'bg-white hover:bg-slate-50 text-slate-900 border-2 border-slate-900',
+    style: 'free',
+  },
+  {
+    name: 'Essentiel',
+    price: '14,90€',
+    period: '/mois',
+    description: 'Gérez votre dossier sereinement',
+    features: ['5 dossiers', '100 pièces par dossier', '20 liens de partage', 'Export PDF + DOCX', 'Courriers illimités', 'Tous types de documents'],
+    border: '',
+    cta: 'Choisir ce plan',
+    btnClass: 'text-white',
+    btnStyle: { backgroundColor: NAVY },
+    style: 'essentiel',
+    badge: 'Populaire',
+  },
+  {
+    name: 'Sérénité',
+    price: '39,90€',
+    period: '/mois',
+    description: 'Allez au bout sans limite',
+    features: ['Dossiers illimités', 'Pièces illimitées', 'Liens de partage illimités', 'Stockage 10 Go', 'Support prioritaire', 'Accès avant-première'],
+    border: '',
+    cta: 'Choisir ce plan',
+    btnClass: 'text-white',
+    btnStyle: { backgroundColor: GOLD },
+    style: 'serenite',
   },
 ];
 
@@ -51,103 +133,44 @@ const Landing = () => {
         const n = r?.data?.total_users;
         if (typeof n === 'number' && n > 0) setUserCount(n);
       })
-      .catch(() => { /* fallback handled in render */ });
+      .catch(() => {});
   }, []);
-
-  const plans = [
-    {
-      name: 'Découverte',
-      price: 'Gratuit',
-      period: '',
-      description: 'Testez AlliéFile sans engagement',
-      features: [
-        '1 dossier',
-        '15 pièces',
-        '3 liens de partage',
-        'Analyse IA',
-        'Export PDF',
-        '1 courrier/jour',
-      ],
-      excluded: [],
-      cta: 'Commencer gratuitement',
-      ctaLink: '/register',
-      style: 'outline',
-    },
-    {
-      name: 'Essentiel',
-      price: '14,90€',
-      period: '/mois',
-      description: 'Gérez votre dossier sereinement',
-      features: [
-        '5 dossiers',
-        '100 pièces par dossier',
-        '20 liens de partage',
-        'Export PDF + DOCX',
-        'Courriers illimités',
-        'Tous types de documents',
-      ],
-      excluded: [],
-      cta: 'Choisir ce plan',
-      ctaLink: '/register',
-      style: 'blue',
-      highlighted: true,
-    },
-    {
-      name: 'Sérénité',
-      price: '39,90€',
-      period: '/mois',
-      description: 'Allez au bout sans limite',
-      features: [
-        'Dossiers illimités',
-        'Pièces illimitées',
-        'Liens de partage illimités',
-        'Stockage 10 Go',
-        'Support prioritaire',
-        'Accès avant-première nouvelles fonctionnalités',
-      ],
-      excluded: [],
-      cta: 'Choisir ce plan',
-      ctaLink: '/register',
-      style: 'gold',
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-slate-900 rounded-sm flex items-center justify-center">
-                <Scale className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-heading font-bold text-lg text-slate-900 tracking-tight">AlliéFile</span>
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200" data-testid="landing-header">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-sm flex items-center justify-center" style={{ backgroundColor: NAVY_DEEP }}>
+              <Scale className="w-5 h-5 text-white" />
             </div>
-            <div className="flex items-center gap-3">
-              <Link to="/login">
-                <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900" data-testid="landing-login-btn">
-                  Se connecter
-                </Button>
-              </Link>
-              <Link to="/register">
-                <Button size="sm" className="bg-slate-900 hover:bg-slate-800 text-white rounded-sm" data-testid="landing-register-btn">
-                  Commencer gratuitement
-                </Button>
-              </Link>
-            </div>
+            <span className="font-heading font-bold text-lg text-slate-900">AlliéFile</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link to="/login" className="text-sm font-medium text-slate-700 hover:text-slate-900 px-3 py-2" data-testid="landing-login-btn">
+              Connexion
+            </Link>
+            <Link
+              to="/register"
+              className="text-sm font-semibold text-white px-4 py-2 rounded-sm hover:opacity-90"
+              style={{ backgroundColor: CTA_RED }}
+              data-testid="landing-register-btn"
+            >
+              Commencer
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="pb-24 px-4" style={{ paddingTop: '2rem' }} data-testid="landing-hero">
+      {/* 1. HERO */}
+      <section className="px-4 pt-12 pb-20 bg-white" data-testid="landing-hero">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-sky-50 text-sky-700 px-4 py-1.5 rounded-full text-sm font-medium mb-4">
-            <Shield className="w-4 h-4" />
+          <div className="inline-flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-xs font-medium mb-6">
+            <ShieldCheck className="w-3.5 h-3.5" />
             Sécurisé et confidentiel
           </div>
-          <div className="mb-8" data-testid="landing-hero-counter">
+          <div className="mb-6" data-testid="landing-hero-counter">
             {userCount !== null ? (
               <span className="text-sm text-slate-500">
                 Déjà <strong className="text-slate-900">{userCount.toLocaleString('fr-FR')}</strong> personnes nous font confiance.
@@ -156,84 +179,160 @@ const Landing = () => {
               <span className="text-sm text-slate-400">Rejoignez notre communauté.</span>
             )}
           </div>
-          <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 tracking-tight leading-tight">
-            Constituez votre dossier juridique en quelques minutes
+          <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 tracking-tight leading-[1.1] mb-6">
+            Votre dossier juridique,<br />
+            <span style={{ color: NAVY }}>enfin organisé</span>
           </h1>
-          <p className="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            AlliéFile analyse vos documents, génère votre chronologie et prépare vos courriers. 
-            Conçu pour les particuliers accompagnés par des professionnels.
+          <p className="text-lg sm:text-xl text-slate-600 leading-relaxed mb-10 max-w-2xl mx-auto">
+            Divorce, litige locatif, procédure contre une administration… On en sort rarement indemne, et on s'épuise à <strong className="text-slate-900">tout garder en tête</strong>. AlliéFile prend le relais et organise votre dossier <strong className="text-slate-900">à votre place</strong>.
           </p>
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link to="/register">
-              <Button size="lg" className="bg-red-600 hover:bg-red-700 text-white px-8 h-12 text-base rounded-sm shadow-lg shadow-red-600/20" data-testid="landing-cta-hero">
-                Essayer gratuitement — sans carte bancaire
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </Link>
+          <Link
+            to="/register"
+            className="inline-flex items-center gap-2 text-white font-semibold px-7 py-3.5 rounded-sm text-base hover:opacity-90 shadow-sm"
+            style={{ backgroundColor: CTA_RED }}
+            data-testid="landing-cta-hero"
+          >
+            Commencer gratuitement
+          </Link>
+          <p className="text-xs text-slate-400 mt-4">Sans carte bancaire. Sans engagement.</p>
+        </div>
+      </section>
+
+      {/* 2. BANDE BLEU MARINE — 4 ÉLÉMENTS */}
+      <section className="py-10 px-4" style={{ backgroundColor: NAVY }} data-testid="landing-trust">
+        <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center text-white">
+          {[
+            { icon: UserRound, label: 'Conçu pour les particuliers' },
+            { icon: Sparkles, label: 'IA juridique' },
+            { icon: ShieldCheck, label: 'Données chiffrées' },
+            { icon: FileText, label: 'Export PDF avocat' },
+          ].map((it, i) => {
+            const Icon = it.icon;
+            return (
+              <div key={i} className="flex flex-col items-center gap-2" data-testid={`landing-trust-${i}`}>
+                <Icon className="w-7 h-7" strokeWidth={1.5} />
+                <span className="text-sm font-medium leading-tight">{it.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 3. PROBLÈME / SOLUTION */}
+      <section className="py-20 px-4 bg-white" data-testid="landing-problem-solution">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 text-center mb-12">
+            Si vous avez déjà géré un dossier juridique…
+          </h2>
+          <div className="grid md:grid-cols-2 gap-8">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-red-600 mb-5">Ce que vous vivez</h3>
+              <ul className="space-y-3">
+                {PAINS.map((p, i) => (
+                  <li
+                    key={i}
+                    className="flex gap-3 items-start bg-red-50 border border-red-100 rounded-sm p-4"
+                    data-testid={`landing-pain-${i}`}
+                  >
+                    <X className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" strokeWidth={2.5} />
+                    <span className="text-sm text-slate-700 leading-relaxed">{p}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-emerald-700 mb-5">Avec AlliéFile</h3>
+              <ul className="space-y-3">
+                {SOLUTIONS.map((s, i) => (
+                  <li
+                    key={i}
+                    className="flex gap-3 items-start bg-emerald-50 border border-emerald-100 rounded-sm p-4"
+                    data-testid={`landing-solution-${i}`}
+                  >
+                    <Check className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" strokeWidth={2.5} />
+                    <span className="text-sm text-slate-700 leading-relaxed">{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Comment ça marche */}
-      <section className="py-20 bg-slate-50 px-4" data-testid="landing-how-it-works">
+      {/* 4. ÉCONOMIE RÉELLE */}
+      <section className="py-20 px-4 bg-slate-50" data-testid="landing-savings">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-16">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 text-center mb-3">
+            Ce que vous économisez vraiment
+          </h2>
+          <p className="text-center text-slate-600 mb-12 max-w-2xl mx-auto">
+            AlliéFile ne remplace pas votre avocat. Il fait en sorte que vous ne payiez plus pour ce que vous pouvez faire vous-même.
+          </p>
+          <div className="grid md:grid-cols-3 gap-5">
+            {SAVINGS.map((s, i) => {
+              const Icon = s.icon;
+              return (
+                <div
+                  key={i}
+                  className="bg-white border border-slate-200 rounded-sm p-6"
+                  data-testid={`landing-saving-${i}`}
+                >
+                  <Icon className="w-7 h-7 mb-4" style={{ color: NAVY }} strokeWidth={1.5} />
+                  <h3 className="font-heading font-semibold text-lg text-slate-900 mb-2">{s.title}</h3>
+                  <p className="text-sm text-slate-600 leading-relaxed">{s.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 5. 3 ÉTAPES */}
+      <section className="py-20 px-4 bg-white" data-testid="landing-steps">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 text-center mb-12">
             Comment ça marche
           </h2>
           <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                step: '1',
-                icon: Upload,
-                title: 'Déposez vos documents',
-                desc: 'Déposez vos pièces justificatives : contrats, factures, courriers, photos. Tous les formats sont acceptés.',
-              },
-              {
-                step: '2',
-                icon: Sparkles,
-                title: 'L\'IA analyse et structure',
-                desc: 'Notre intelligence artificielle identifie chaque document, propose un classement et génère votre chronologie des faits.',
-              },
-              {
-                step: '3',
-                icon: Share2,
-                title: 'Exportez et partagez',
-                desc: 'Exportez votre dossier en PDF, générez un lien de partage sécurisé pour votre avocat ou votre association.',
-              },
-            ].map((item, i) => (
-              <div key={i} className="text-center">
-                <div className="w-14 h-14 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center mx-auto mb-5 shadow-sm">
-                  <item.icon className="w-6 h-6 text-slate-700" />
+            {STEPS.map((s, i) => (
+              <div key={i} className="text-center" data-testid={`landing-step-${i}`}>
+                <div
+                  className="font-heading font-bold text-5xl mb-3 leading-none"
+                  style={{ color: GOLD }}
+                >
+                  {s.n}
                 </div>
-                <div className="text-xs font-bold text-sky-600 uppercase tracking-wider mb-2">Étape {item.step}</div>
-                <h3 className="font-heading font-bold text-lg text-slate-900 mb-2">{item.title}</h3>
-                <p className="text-sm text-slate-600 leading-relaxed">{item.desc}</p>
+                <h3 className="font-heading font-semibold text-lg text-slate-900 mb-2">{s.title}</h3>
+                <p className="text-sm text-slate-600 leading-relaxed max-w-xs mx-auto">{s.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Témoignages */}
-      <section className="py-20 px-4 bg-white" data-testid="landing-testimonials">
+      {/* 6. TÉMOIGNAGES */}
+      <section className="py-20 px-4 bg-slate-50" data-testid="landing-testimonials">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-12">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 text-center mb-12">
             Ils utilisent AlliéFile
           </h2>
           <div className="grid md:grid-cols-3 gap-6">
             {TESTIMONIALS.map((t, i) => (
               <figure
                 key={i}
-                className="relative bg-slate-50 border border-slate-200 rounded-sm p-6 flex flex-col"
+                className="relative bg-white border border-slate-200 rounded-sm p-6 flex flex-col"
                 data-testid={`landing-testimonial-${i}`}
               >
-                <div className="text-amber-400 text-base mb-3" aria-label="5 étoiles sur 5">★★★★★</div>
-                <Quote className="w-5 h-5 text-sky-500 mb-3" />
+                <div className="text-base mb-3" style={{ color: GOLD }} aria-label="5 étoiles sur 5">★★★★★</div>
+                <Quote className="w-5 h-5 mb-3" style={{ color: NAVY }} />
                 <blockquote className="text-sm text-slate-700 leading-relaxed flex-1">
                   « {t.quote} »
                 </blockquote>
                 <figcaption className="mt-5 flex items-center gap-3 pt-4 border-t border-slate-200">
-                  <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  <div
+                    className="w-9 h-9 rounded-full text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    style={{ backgroundColor: NAVY }}
+                  >
                     {t.initials}
                   </div>
                   <div>
@@ -247,187 +346,132 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Avantages */}
-      <section className="py-20 px-4">
+      {/* 7. TARIFS + FAQ */}
+      <section className="py-20 px-4 bg-white" data-testid="landing-pricing">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-16">
-            Pourquoi AlliéFile
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 text-center mb-3">
+            Des tarifs à votre image
           </h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              { icon: Clock, title: 'Gain de temps', desc: 'Automatisez le classement et l\'analyse de vos documents juridiques.' },
-              { icon: Shield, title: 'Données sécurisées', desc: 'Vos documents sont chiffrés et stockés de manière sécurisée dans le cloud.' },
-              { icon: FileText, title: 'Dossier structuré', desc: 'Chronologie, bordereau, exposé des faits : tout est généré automatiquement.' },
-              { icon: Share2, title: 'Partage simple', desc: 'Envoyez un lien sécurisé à votre avocat, il accède directement à votre dossier.' },
-              { icon: Sparkles, title: 'IA juridique', desc: 'L\'intelligence artificielle identifie vos documents et propose un classement pertinent.' },
-              { icon: Scale, title: 'Fait pour vous', desc: 'Conçu pour les particuliers, même sans connaissance juridique.' },
-            ].map((item, i) => (
-              <div key={i} className="p-5 border border-slate-200 rounded-sm hover:border-slate-300 transition-colors">
-                <item.icon className="w-5 h-5 text-sky-600 mb-3" />
-                <h3 className="font-heading font-semibold text-slate-900 mb-1">{item.title}</h3>
-                <p className="text-sm text-slate-600">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Tarifs */}
-      <section className="py-20 bg-slate-50 px-4" id="pricing" data-testid="landing-pricing">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-4">
-            Tarifs simples et transparents
-          </h2>
-          <p className="text-center text-slate-600 mb-12">Sans engagement. Annulez à tout moment.</p>
+          <p className="text-center text-slate-600 mb-12">Commencez gratuitement, payez seulement si vous en avez besoin.</p>
           <div className="grid md:grid-cols-3 gap-6">
-            {plans.map((plan, i) => (
-              <div
-                key={i}
-                className={`bg-white rounded-sm border-2 p-6 flex flex-col ${
-                  plan.highlighted ? 'border-sky-500 shadow-lg shadow-sky-500/10 relative' : 'border-slate-200'
-                }`}
-              >
-                {plan.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-sky-500 text-white text-xs font-bold px-3 py-1 rounded-full">
-                    Populaire
-                  </div>
-                )}
-                <h3 className="font-heading font-bold text-lg text-slate-900">{plan.name}</h3>
-                <div className="mt-3 mb-1">
-                  <span className="text-3xl font-bold text-slate-900">{plan.price}</span>
-                  {plan.period && <span className="text-slate-500 text-sm">{plan.period}</span>}
-                </div>
-                <p className="text-sm text-slate-500 mb-6">{plan.description}</p>
-                <ul className="space-y-2.5 flex-1 mb-6">
-                  {plan.features.map((f, j) => (
-                    <li key={j} className="flex items-start gap-2 text-sm text-slate-700">
-                      <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                  {plan.excluded.map((f, j) => (
-                    <li key={`ex-${j}`} className="flex items-start gap-2 text-sm text-slate-400 line-through">
-                      <span className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link to={plan.ctaLink}>
-                  <Button
-                    className={`w-full rounded-sm ${
-                      plan.style === 'outline'
-                        ? 'bg-white hover:bg-slate-50 text-slate-900 border-2 border-slate-900'
-                        : plan.style === 'gold'
-                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                        : 'bg-sky-600 hover:bg-sky-700 text-white'
-                    }`}
-                    data-testid={`landing-plan-${plan.name.toLowerCase()}`}
-                  >
-                    {plan.cta}
-                  </Button>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="py-20 px-4 bg-white" data-testid="landing-faq">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-12">
-            Questions fréquentes
-          </h2>
-          <div className="space-y-3">
-            {FAQ.map((item, i) => (
-              <div
-                key={i}
-                className="border border-slate-200 rounded-sm overflow-hidden bg-white"
-                data-testid={`landing-faq-${i}`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setOpenFaq(openFaq === i ? -1 : i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition-colors"
-                  data-testid={`landing-faq-toggle-${i}`}
+            {PLANS.map((p) => {
+              const borderStyle =
+                p.style === 'essentiel'
+                  ? { borderColor: NAVY }
+                  : p.style === 'serenite'
+                  ? { borderColor: GOLD }
+                  : {};
+              return (
+                <div
+                  key={p.name}
+                  className={`relative bg-white border-2 ${p.border || ''} rounded-sm p-7 flex flex-col`}
+                  style={borderStyle}
+                  data-testid={`landing-plan-card-${p.style}`}
                 >
-                  <span className="font-semibold text-slate-900 text-sm">{item.q}</span>
-                  <ChevronDown
-                    className={`w-4 h-4 text-slate-500 transition-transform ${openFaq === i ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                {openFaq === i && (
-                  <div className="px-5 pb-5 pt-1 text-sm text-slate-600 leading-relaxed">
-                    {item.a}
+                  {p.badge && (
+                    <div
+                      className="absolute -top-3 left-1/2 -translate-x-1/2 text-white text-xs font-bold px-3 py-1 rounded-full"
+                      style={{ backgroundColor: NAVY }}
+                    >
+                      {p.badge}
+                    </div>
+                  )}
+                  <h3 className="font-heading font-bold text-xl text-slate-900 mb-1">{p.name}</h3>
+                  <p className="text-xs text-slate-500 mb-5">{p.description}</p>
+                  <div className="mb-6">
+                    <span className="font-heading text-4xl font-bold text-slate-900">{p.price}</span>
+                    {p.period && <span className="text-slate-500 text-sm ml-1">{p.period}</span>}
                   </div>
-                )}
-              </div>
-            ))}
+                  <ul className="space-y-2 mb-7 flex-1">
+                    {p.features.map((f, j) => (
+                      <li key={j} className="flex items-start gap-2 text-sm text-slate-700">
+                        <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.5} />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    to="/register"
+                    className={`w-full inline-flex items-center justify-center px-4 py-2.5 rounded-sm text-sm font-semibold hover:opacity-90 ${p.btnClass}`}
+                    style={p.btnStyle || {}}
+                    data-testid={`landing-plan-${p.style}`}
+                  >
+                    {p.cta}
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* FAQ */}
+          <div className="mt-20 max-w-3xl mx-auto" data-testid="landing-faq">
+            <h3 className="font-heading text-2xl font-bold text-slate-900 text-center mb-8">
+              Questions fréquentes
+            </h3>
+            <div className="space-y-3">
+              {FAQ.map((item, i) => (
+                <div
+                  key={i}
+                  className="border border-slate-200 rounded-sm overflow-hidden bg-white"
+                  data-testid={`landing-faq-${i}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenFaq(openFaq === i ? -1 : i)}
+                    className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+                    data-testid={`landing-faq-toggle-${i}`}
+                  >
+                    <span className="font-semibold text-slate-900 text-sm">{item.q}</span>
+                    <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
+                  </button>
+                  {openFaq === i && (
+                    <div className="px-5 pb-5 pt-1 text-sm text-slate-600 leading-relaxed">{item.a}</div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* CTA final */}
-      <section className="py-20 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 mb-4">
-            Prêt à organiser votre dossier ?
+      {/* 8. CTA FINAL */}
+      <section className="py-20 px-4" style={{ backgroundColor: NAVY }} data-testid="landing-final-cta">
+        <div className="max-w-3xl mx-auto text-center text-white">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold mb-5 leading-tight">
+            Ne laissez plus vos droits dépendre<br />
+            d'un tiroir en désordre.
           </h2>
-          <p className="text-slate-600 mb-8" data-testid="landing-counter">
-            {userCount !== null
-              ? `Déjà ${userCount.toLocaleString('fr-FR')} personnes nous font confiance.`
-              : 'Rejoignez notre communauté.'}
+          <p className="text-slate-200 mb-8 max-w-xl mx-auto leading-relaxed">
+            Quelques minutes pour structurer votre dossier. Des heures économisées chez votre avocat.
           </p>
-          <Link to="/register">
-            <Button size="lg" className="bg-red-600 hover:bg-red-700 text-white px-8 h-12 text-base rounded-sm">
-              Créer mon compte gratuitement
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+          <Link
+            to="/register"
+            className="inline-flex items-center gap-2 text-white font-semibold px-7 py-3.5 rounded-sm text-base hover:opacity-90 shadow-lg"
+            style={{ backgroundColor: CTA_RED }}
+            data-testid="landing-cta-final"
+          >
+            Commencer gratuitement
           </Link>
+          <p className="text-xs text-slate-300 mt-4">Sans carte bancaire. Annulation à tout moment.</p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-slate-900 text-white py-12 px-4" data-testid="landing-footer">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col md:flex-row items-start justify-between gap-8">
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 bg-white/10 rounded-sm flex items-center justify-center">
-                  <Scale className="w-3.5 h-3.5 text-white" />
-                </div>
-                <span className="font-heading font-bold text-lg">AlliéFile</span>
-              </div>
-              <p className="text-sm text-slate-400 max-w-xs">
-                Votre allié juridique intelligent. Constituez, organisez et partagez vos dossiers en toute simplicité.
-              </p>
+      <footer className="px-4 py-10 text-slate-400 text-sm" style={{ backgroundColor: NAVY_DEEP }} data-testid="landing-footer">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-sm flex items-center justify-center bg-white/10">
+              <Scale className="w-4 h-4 text-white" />
             </div>
-            <div className="flex gap-12">
-              <div>
-                <h4 className="font-semibold text-sm mb-3">Produit</h4>
-                <ul className="space-y-2 text-sm text-slate-400">
-                  <li><a href="#pricing" className="hover:text-white transition-colors">Tarifs</a></li>
-                  <li><Link to="/login" className="hover:text-white transition-colors">Se connecter</Link></li>
-                  <li><Link to="/register" className="hover:text-white transition-colors">S'inscrire</Link></li>
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm mb-3">Légal</h4>
-                <ul className="space-y-2 text-sm text-slate-400">
-                  <li><Link to="/cgu" className="hover:text-white transition-colors">CGU</Link></li>
-                  <li><Link to="/privacy" className="hover:text-white transition-colors">Politique de confidentialité</Link></li>
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm mb-3">Contact</h4>
-                <ul className="space-y-2 text-sm text-slate-400">
-                  <li><a href="mailto:contact@alliefile.com" className="hover:text-white transition-colors">contact@alliefile.com</a></li>
-                </ul>
-              </div>
-            </div>
+            <span className="text-white font-semibold">AlliéFile</span>
+            <span className="text-slate-500 hidden sm:inline">— Votre allié juridique intelligent</span>
           </div>
-          <div className="mt-10 pt-6 border-t border-slate-800 text-center text-xs text-slate-500">
-            © {new Date().getFullYear()} AlliéFile. Tous droits réservés.
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+            <Link to="/pricing" className="hover:text-white" data-testid="footer-pricing-link">Tarifs</Link>
+            <Link to="/login" className="hover:text-white" data-testid="footer-login-link">Connexion</Link>
+            <Link to="/cgu" className="hover:text-white" data-testid="footer-cgu-link">CGU</Link>
+            <Link to="/privacy" className="hover:text-white" data-testid="footer-privacy-link">Confidentialité</Link>
+            <span className="text-slate-500">© {new Date().getFullYear()} AlliéFile</span>
           </div>
         </div>
       </footer>

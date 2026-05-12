@@ -1019,11 +1019,21 @@ async def create_dossier(data: DossierCreate, user: dict = Depends(get_current_u
 @api_router.get("/dossiers", response_model=List[DossierResponse])
 async def list_dossiers(user: dict = Depends(get_current_user)):
     dossiers = await db.dossiers.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
-    result = []
-    for d in dossiers:
-        count = await db.pieces.count_documents({"dossier_id": d["id"]})
-        result.append(DossierResponse(**d, piece_count=count))
-    return result
+    if not dossiers:
+        return []
+    # Single aggregation query instead of N+1 count_documents
+    dossier_ids = [d["id"] for d in dossiers]
+    piece_counts: dict = {}
+    pipeline = [
+        {"$match": {"dossier_id": {"$in": dossier_ids}}},
+        {"$group": {"_id": "$dossier_id", "count": {"$sum": 1}}},
+    ]
+    async for row in db.pieces.aggregate(pipeline):
+        piece_counts[row["_id"]] = row["count"]
+    return [
+        DossierResponse(**d, piece_count=piece_counts.get(d["id"], 0))
+        for d in dossiers
+    ]
 
 @api_router.get("/dossiers/{dossier_id}", response_model=DossierResponse)
 async def get_dossier(dossier_id: str, user: dict = Depends(get_current_user)):

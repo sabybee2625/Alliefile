@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Scale, Upload, Sparkles, Share2, Check, ArrowRight, Shield, Clock, FileText, Quote } from 'lucide-react';
+import { Scale, Upload, Sparkles, Share2, Check, ArrowRight, Shield, Clock, FileText, Quote, ChevronDown } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
 const TESTIMONIALS = [
@@ -25,71 +25,90 @@ const TESTIMONIALS = [
   },
 ];
 
+const FAQ = [
+  {
+    q: 'Puis-je annuler à tout moment ?',
+    a: "Oui, sans préavis. L'annulation est immédiate depuis votre tableau de bord, et vous conservez l'accès jusqu'à la fin de votre période de facturation.",
+  },
+  {
+    q: 'Comment fonctionne l\'analyse IA ?',
+    a: "Claude analyse chaque document que vous déposez et structure automatiquement votre dossier : type de pièce, date, parties, résumé, mots-clés et chronologie. Vous n'avez plus qu'à valider.",
+  },
+  {
+    q: 'Mes documents sont-ils sécurisés ?',
+    a: "Oui. Vos documents sont chiffrés et stockés sur des serveurs sécurisés en Europe. Seul vous (et les destinataires que vous choisissez via vos liens de partage) y avez accès.",
+  },
+];
+
 const Landing = () => {
   const [dossierCount, setDossierCount] = useState(null);
+  const [openFaq, setOpenFaq] = useState(0);
 
   useEffect(() => {
     const apiUrl = process.env.REACT_APP_BACKEND_URL;
-    axios.get(`${apiUrl}/api/auth/stats`, { timeout: 4000 })
+    axios.get(`${apiUrl}/api/public/stats`, { timeout: 4000 })
       .then((r) => {
         const n = r?.data?.total_dossiers;
         if (typeof n === 'number' && n > 0) setDossierCount(n);
       })
       .catch(() => { /* fallback handled in render */ });
   }, []);
+
   const plans = [
     {
       name: 'Découverte',
       price: 'Gratuit',
       period: '',
-      description: 'Pour tester AlliéFile',
+      description: 'Testez AlliéFile sans engagement',
       features: [
         '1 dossier',
-        '10 pièces',
+        '15 pièces',
         '3 liens de partage',
-        'Analyse IA basique',
+        'Analyse IA',
         'Export PDF',
+        '1 courrier/jour',
       ],
-      excluded: ['Export DOCX', 'Assistant avancé'],
+      excluded: [],
       cta: 'Commencer gratuitement',
       ctaLink: '/register',
-      highlighted: false,
+      style: 'outline',
     },
     {
       name: 'Essentiel',
       price: '14,90€',
       period: '/mois',
-      description: 'Pour gérer vos dossiers sereinement',
+      description: 'Gérez votre dossier sereinement',
       features: [
         '5 dossiers',
-        '100 pièces',
+        '100 pièces par dossier',
         '20 liens de partage',
-        'Analyse IA complète',
         'Export PDF + DOCX',
-        'Tous types d\'assistant',
+        'Courriers illimités',
+        'Tous types de documents',
       ],
       excluded: [],
-      cta: 'Essayer gratuitement',
+      cta: 'Choisir ce plan',
       ctaLink: '/register',
+      style: 'blue',
       highlighted: true,
     },
     {
-      name: 'Pro',
+      name: 'Sérénité',
       price: '39,90€',
       period: '/mois',
-      description: 'Pour les professionnels exigeants',
+      description: 'Allez au bout sans limite',
       features: [
         'Dossiers illimités',
         'Pièces illimitées',
         'Liens de partage illimités',
-        'Toutes les fonctionnalités',
-        'Support prioritaire',
         'Stockage 10 Go',
+        'Support prioritaire',
+        'Accès avant-première nouvelles fonctionnalités',
       ],
       excluded: [],
-      cta: 'Essayer gratuitement',
+      cta: 'Choisir ce plan',
       ctaLink: '/register',
-      highlighted: false,
+      style: 'gold',
     },
   ];
 
@@ -122,11 +141,20 @@ const Landing = () => {
       </header>
 
       {/* Hero */}
-      <section className="pt-20 pb-24 px-4" data-testid="landing-hero">
+      <section className="pb-24 px-4" style={{ paddingTop: '2rem' }} data-testid="landing-hero">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-sky-50 text-sky-700 px-4 py-1.5 rounded-full text-sm font-medium mb-8">
+          <div className="inline-flex items-center gap-2 bg-sky-50 text-sky-700 px-4 py-1.5 rounded-full text-sm font-medium mb-4">
             <Shield className="w-4 h-4" />
             Sécurisé et confidentiel
+          </div>
+          <div className="mb-8" data-testid="landing-hero-counter">
+            {dossierCount !== null ? (
+              <span className="text-sm text-slate-500">
+                Déjà <strong className="text-slate-900">{dossierCount.toLocaleString('fr-FR')}</strong> dossiers constitués par nos utilisateurs.
+              </span>
+            ) : (
+              <span className="text-sm text-slate-400">Rejoignez notre communauté.</span>
+            )}
           </div>
           <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 tracking-tight leading-tight">
             Constituez votre dossier juridique en quelques minutes
@@ -157,7 +185,7 @@ const Landing = () => {
               {
                 step: '1',
                 icon: Upload,
-                title: 'Uploadez vos documents',
+                title: 'Déposez vos documents',
                 desc: 'Déposez vos pièces justificatives : contrats, factures, courriers, photos. Tous les formats sont acceptés.',
               },
               {
@@ -189,10 +217,9 @@ const Landing = () => {
       {/* Témoignages */}
       <section className="py-20 px-4 bg-white" data-testid="landing-testimonials">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-3">
+          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-12">
             Ils utilisent AlliéFile
           </h2>
-          <p className="text-center text-slate-500 text-sm mb-12">Trois exemples parmi nos utilisateurs.</p>
           <div className="grid md:grid-cols-3 gap-6">
             {TESTIMONIALS.map((t, i) => (
               <figure
@@ -200,6 +227,7 @@ const Landing = () => {
                 className="relative bg-slate-50 border border-slate-200 rounded-sm p-6 flex flex-col"
                 data-testid={`landing-testimonial-${i}`}
               >
+                <div className="text-amber-400 text-base mb-3" aria-label="5 étoiles sur 5">★★★★★</div>
                 <Quote className="w-5 h-5 text-sky-500 mb-3" />
                 <blockquote className="text-sm text-slate-700 leading-relaxed flex-1">
                   « {t.quote} »
@@ -287,15 +315,52 @@ const Landing = () => {
                 <Link to={plan.ctaLink}>
                   <Button
                     className={`w-full rounded-sm ${
-                      plan.highlighted
-                        ? 'bg-sky-600 hover:bg-sky-700 text-white'
-                        : 'bg-slate-900 hover:bg-slate-800 text-white'
+                      plan.style === 'outline'
+                        ? 'bg-white hover:bg-slate-50 text-slate-900 border-2 border-slate-900'
+                        : plan.style === 'gold'
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        : 'bg-sky-600 hover:bg-sky-700 text-white'
                     }`}
                     data-testid={`landing-plan-${plan.name.toLowerCase()}`}
                   >
                     {plan.cta}
                   </Button>
                 </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="py-20 px-4 bg-white" data-testid="landing-faq">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-12">
+            Questions fréquentes
+          </h2>
+          <div className="space-y-3">
+            {FAQ.map((item, i) => (
+              <div
+                key={i}
+                className="border border-slate-200 rounded-sm overflow-hidden bg-white"
+                data-testid={`landing-faq-${i}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setOpenFaq(openFaq === i ? -1 : i)}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+                  data-testid={`landing-faq-toggle-${i}`}
+                >
+                  <span className="font-semibold text-slate-900 text-sm">{item.q}</span>
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-500 transition-transform ${openFaq === i ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {openFaq === i && (
+                  <div className="px-5 pb-5 pt-1 text-sm text-slate-600 leading-relaxed">
+                    {item.a}
+                  </div>
+                )}
               </div>
             ))}
           </div>

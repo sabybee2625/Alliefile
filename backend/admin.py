@@ -147,11 +147,11 @@ def register_admin_routes(api_router, db, get_current_user):
         plan: str = Body(..., embed=True),
         _: dict = Depends(require_admin),
     ):
-        valid = {"free", "standard", "premium", "essentiel", "pro"}
+        valid = {"free", "standard", "premium", "essentiel", "pro", "serenite"}
         if plan not in valid:
             raise HTTPException(status_code=400, detail=f"Plan invalide. Autorisés: {valid}")
         # Normalize to internal keys
-        plan_map = {"essentiel": "standard", "pro": "premium"}
+        plan_map = {"essentiel": "standard", "pro": "premium", "serenite": "premium"}
         plan = plan_map.get(plan, plan)
 
         now = datetime.now(timezone.utc).isoformat()
@@ -173,6 +173,40 @@ def register_admin_routes(api_router, db, get_current_user):
             raise HTTPException(status_code=404, detail="User not found")
         logger.info(f"Admin set plan={plan} for user={user_id}")
         return {"ok": True, "plan": plan}
+
+    @api_router.delete("/admin/users/{user_id}")
+    async def admin_delete_user(
+        user_id: str,
+        _: dict = Depends(require_admin),
+    ):
+        """Supprime un utilisateur et toutes ses données (dossiers, pièces, partages, transactions)."""
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Récupère tous les IDs de dossiers de l'utilisateur
+        dossier_ids = [d["id"] async for d in db.dossiers.find({"user_id": user_id}, {"id": 1})]
+
+        deleted = {
+            "dossiers": 0,
+            "pieces": 0,
+            "share_links": 0,
+            "share_access_logs": 0,
+            "payment_transactions": 0,
+        }
+        if dossier_ids:
+            r = await db.pieces.delete_many({"dossier_id": {"$in": dossier_ids}})
+            deleted["pieces"] = r.deleted_count
+            r = await db.share_links.delete_many({"dossier_id": {"$in": dossier_ids}})
+            deleted["share_links"] = r.deleted_count
+            r = await db.dossiers.delete_many({"user_id": user_id})
+            deleted["dossiers"] = r.deleted_count
+        r = await db.payment_transactions.delete_many({"user_id": user_id})
+        deleted["payment_transactions"] = r.deleted_count
+        await db.users.delete_one({"id": user_id})
+
+        logger.info(f"Admin deleted user={user_id} email={user.get('email')} stats={deleted}")
+        return {"ok": True, "deleted": deleted}
 
     @api_router.get("/admin/promo-codes")
     async def admin_list_promos(_: dict = Depends(require_admin)):

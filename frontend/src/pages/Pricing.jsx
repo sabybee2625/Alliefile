@@ -40,9 +40,9 @@ const PricingPage = () => {
   // Check for payment success/cancel
   useEffect(() => {
     const sessionId = searchParams.get('session_id');
-    const status = searchParams.get('status');
-    
-    if (sessionId && status === 'success') {
+    // BUG FIX: Stripe redirect ne contient PAS de param `status`, juste session_id.
+    // Si on a un session_id on déclenche la vérification.
+    if (sessionId) {
       checkPaymentStatus(sessionId);
     }
   }, [searchParams]);
@@ -184,14 +184,14 @@ const PricingPage = () => {
           <Card className={`border-2 ${getCurrentPlan() === 'free' ? 'border-slate-400' : 'border-slate-200'}`}>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">Gratuit</CardTitle>
+                <CardTitle className="text-xl">Découverte</CardTitle>
                 {getCurrentPlan() === 'free' && (
                   <Badge variant="outline" className="text-emerald-600 border-emerald-300">
                     Plan actuel
                   </Badge>
                 )}
               </div>
-              <CardDescription>Pour découvrir l'application</CardDescription>
+              <CardDescription>Testez AlliéFile sans engagement</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="mb-6">
@@ -205,7 +205,7 @@ const PricingPage = () => {
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
-                  15 pièces maximum
+                  15 pièces
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
@@ -213,19 +213,15 @@ const PricingPage = () => {
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
+                  Analyse IA
+                </li>
+                <li className="flex items-center gap-2 text-sm">
+                  <Check className="w-4 h-4 text-emerald-500" />
                   Export PDF
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
-                  1 génération assistant/jour
-                </li>
-                <li className="flex items-center gap-2 text-sm text-slate-400">
-                  <X className="w-4 h-4" />
-                  Export DOCX
-                </li>
-                <li className="flex items-center gap-2 text-sm text-slate-400">
-                  <X className="w-4 h-4" />
-                  Partage avancé
+                  1 courrier/jour
                 </li>
               </ul>
             </CardContent>
@@ -258,7 +254,7 @@ const PricingPage = () => {
                     </Badge>
                   )}
                 </div>
-                <CardDescription>Pour gérer vos dossiers sereinement</CardDescription>
+                <CardDescription>Gérez votre dossier sereinement</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-6">
@@ -316,7 +312,7 @@ const PricingPage = () => {
                     </Badge>
                   )}
                 </div>
-                <CardDescription>Pour les professionnels exigeants</CardDescription>
+                <CardDescription>Allez au bout sans limite</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-6">

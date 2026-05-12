@@ -35,28 +35,31 @@ SUBSCRIPTION_PLANS = {
         "price_monthly": 14.90,
         "price_yearly": 149.00,
         "currency": "eur",
+        "description": "Gérez votre dossier sereinement",
         "features": [
             "5 dossiers",
             "100 pièces par dossier",
             "20 liens de partage",
             "Export PDF + DOCX",
-            "Assistant illimité"
+            "Courriers illimités",
+            "Tous types de documents"
         ]
     },
-    # Internal key "premium" = public "Pro"
+    # Internal key "premium" = public "Sérénité"
     "premium": {
-        "name": "Pro",
-        "slug": "pro",
+        "name": "Sérénité",
+        "slug": "serenite",
         "price_monthly": 39.90,
         "price_yearly": 399.00,
         "currency": "eur",
+        "description": "Allez au bout sans limite",
         "features": [
             "Dossiers illimités",
             "Pièces illimitées",
             "Liens de partage illimités",
-            "Toutes les fonctionnalités",
+            "Stockage 10 Go",
             "Support prioritaire",
-            "Stockage 10 Go"
+            "Accès avant-première nouvelles fonctionnalités"
         ]
     }
 }
@@ -64,7 +67,8 @@ SUBSCRIPTION_PLANS = {
 # Public slug -> internal key mapping (frontend may send either)
 PLAN_SLUG_ALIASES = {
     "essentiel": "standard",
-    "pro": "premium",
+    "pro": "premium",        # ancien alias conservé pour compat
+    "serenite": "premium",   # nouveau alias public
 }
 
 def normalize_plan_id(plan_id: str) -> str:

@@ -2956,6 +2956,19 @@ app.include_router(api_router)
 async def root_health():
     return {"status": "healthy"}
 
+# Public stats (no auth) — for landing page counter
+# Defined on `app` directly because it's added after include_router
+@app.get("/api/public/stats")
+async def public_stats():
+    """Public statistics for the landing page (no auth required)."""
+    try:
+        total_dossiers = await db.dossiers.count_documents({})
+        total_users = await db.users.count_documents({})
+        return {"total_dossiers": total_dossiers, "total_users": total_users}
+    except Exception as e:
+        logger.error(f"public_stats error: {e}")
+        return {"total_dossiers": 0, "total_users": 0}
+
 # Security middlewares (order matters - added last = executed first)
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(ErrorHandlingMiddleware)

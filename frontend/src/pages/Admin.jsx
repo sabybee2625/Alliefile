@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 // Mapping clé interne -> libellé public
-const PLAN_LABEL = { free: 'Free', standard: 'Essentiel', premium: 'Pro' };
+const PLAN_LABEL = { free: 'Free', standard: 'Essentiel', premium: 'Sérénité' };
 const planLabel = (p) => PLAN_LABEL[p] || p;
 
 const AdminPage = () => {
@@ -159,6 +159,19 @@ const UsersPanel = () => {
     }
   };
 
+  const deleteUser = async (userId, email) => {
+    if (!window.confirm(`Supprimer définitivement le compte ${email} et toutes ses données ? Cette action est irréversible.`)) {
+      return;
+    }
+    try {
+      await adminApi.deleteUser(userId);
+      toast.success('Compte supprimé');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erreur');
+    }
+  };
+
   return (
     <div className="mt-6 space-y-4">
       <div className="flex gap-2">
@@ -193,10 +206,13 @@ const UsersPanel = () => {
                   <TableCell className="text-xs text-slate-500">{u.plan_status || '—'}</TableCell>
                   <TableCell className="text-xs text-slate-500">{(u.created_at || '').slice(0, 10)}</TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center flex-wrap">
                       <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'free')} data-testid={`admin-user-${u.id}-free`}>Free</Button>
                       <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'essentiel')} data-testid={`admin-user-${u.id}-essentiel`}>Essentiel</Button>
-                      <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'pro')} data-testid={`admin-user-${u.id}-pro`}>Pro</Button>
+                      <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'serenite')} data-testid={`admin-user-${u.id}-serenite`}>Sérénité</Button>
+                      <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteUser(u.id, u.email)} data-testid={`admin-user-${u.id}-delete`}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>

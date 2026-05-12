@@ -13,6 +13,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#0f172a" />
 
+        <!-- Favicons -->
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="manifest" href="/manifest.json" />
+
         <!-- Primary SEO -->
         <title>AlliéFile — Votre allié juridique intelligent</title>
         <meta name="description" content="AlliéFile vous aide à constituer, organiser et partager vos dossiers juridiques en quelques minutes. Analyse IA, chronologie automatique, export PDF/DOCX et partage sécurisé à votre avocat." />
@@ -78,8 +84,28 @@
             }
         </script>
         <style>
-            #emergent-badge { display: none !important; }
+            #emergent-badge { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; width: 0 !important; height: 0 !important; }
         </style>
+        <script>
+            // Suppression robuste du badge Emergent (DOM + MutationObserver)
+            (function () {
+                function killBadge() {
+                    var b = document.getElementById('emergent-badge');
+                    if (b && b.parentNode) {
+                        try { b.parentNode.removeChild(b); } catch (e) {}
+                    }
+                }
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', killBadge);
+                } else {
+                    killBadge();
+                }
+                try {
+                    var obs = new MutationObserver(killBadge);
+                    obs.observe(document.documentElement, { childList: true, subtree: true });
+                } catch (e) {}
+            })();
+        </script>
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -179,6 +179,7 @@ export const adminApi = {
   stats: () => api.get('/admin/stats'),
   listUsers: (params = {}) => api.get('/admin/users', { params }),
   updateUserPlan: (userId, plan) => api.patch(`/admin/users/${userId}/plan`, { plan }),
+  deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
   listPromos: () => api.get('/admin/promo-codes'),
   createPromo: (data) => api.post('/admin/promo-codes', data),
   deletePromo: (code) => api.delete(`/admin/promo-codes/${code}`),

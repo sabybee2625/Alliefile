@@ -130,3 +130,57 @@ async def send_welcome_email(to_email: str, name: str) -> None:
 def send_welcome_email_background(to_email: str, name: str) -> None:
     """Synchronous wrapper for FastAPI BackgroundTasks."""
     _send_sync(to_email, "Bienvenue sur AlliéFile", _welcome_html(name))
+
+
+def _reset_html(name: str, reset_url: str) -> str:
+    safe_name = (name or "").strip() or "à toi"
+    return f"""\
+<!doctype html>
+<html lang="fr">
+  <body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:32px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:4px;border:1px solid #e2e8f0;">
+          <tr><td style="padding:32px 40px 16px 40px;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#0f172a;width:32px;height:32px;border-radius:4px;text-align:center;vertical-align:middle;color:#ffffff;font-weight:bold;">A</td>
+                <td style="padding-left:10px;font-weight:bold;font-size:18px;color:#0f172a;">AlliéFile</td>
+              </tr>
+            </table>
+          </td></tr>
+          <tr><td style="padding:8px 40px 0 40px;">
+            <h1 style="margin:0 0 16px 0;font-size:22px;color:#0f172a;">Réinitialisation du mot de passe</h1>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Bonjour {safe_name},
+            </p>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Vous avez demandé à réinitialiser le mot de passe de votre compte AlliéFile.
+              Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe. Ce lien est valable <strong>1 heure</strong>.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 24px 0;">
+              <tr><td style="background-color:#0f172a;border-radius:4px;">
+                <a href="{reset_url}" style="display:inline-block;padding:12px 22px;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;">Réinitialiser mon mot de passe</a>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 14px 0;font-size:13px;line-height:1.6;color:#64748b;word-break:break-all;">
+              Ou copiez ce lien : {reset_url}
+            </p>
+            <p style="margin:18px 0 0 0;font-size:13px;line-height:1.6;color:#94a3b8;">
+              Si vous n'êtes pas à l'origine de cette demande, ignorez simplement ce message — votre mot de passe restera inchangé.
+            </p>
+          </td></tr>
+          <tr><td style="padding:24px 40px 32px 40px;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">AlliéFile — Votre allié juridique intelligent</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>
+"""
+
+
+def send_password_reset_email_background(to_email: str, name: str, reset_url: str) -> None:
+    """Synchronous wrapper for FastAPI BackgroundTasks."""
+    _send_sync(to_email, "Réinitialisation de votre mot de passe AlliéFile", _reset_html(name, reset_url))

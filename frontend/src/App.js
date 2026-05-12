@@ -12,6 +12,7 @@ import PricingPage from './pages/Pricing';
 import { CGU, Privacy } from './pages/Legal';
 import NotFound from './pages/NotFound';
 import AdminPage from './pages/Admin';
+import ResetPassword, { ForgotPassword } from './pages/ResetPassword';
 import { CookieConsent } from './components/CookieConsent';
 import './App.css';
 
@@ -68,6 +69,8 @@ function AppRoutes() {
           </PublicAuthRoute>
         }
       />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* Shared dossier (public, no auth required) */}
       <Route path="/shared/:token" element={<SharedDossier />} />

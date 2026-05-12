@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { toast } from 'sonner';
 import { Scale, Loader2 } from 'lucide-react';
+import { PasswordStrengthMeter, getPasswordStrength } from '../components/PasswordStrengthMeter';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -30,8 +31,13 @@ const Register = () => {
       return;
     }
 
-    if (password.length < 6) {
-      toast.error('Le mot de passe doit contenir au moins 6 caractères');
+    if (password.length < 8) {
+      toast.error('Le mot de passe doit contenir au moins 8 caractères');
+      return;
+    }
+
+    if (getPasswordStrength(password).score < 2) {
+      toast.error('Mot de passe trop faible. Ajoutez majuscules, chiffres ou caractères spéciaux.');
       return;
     }
 
@@ -107,6 +113,7 @@ const Register = () => {
                   className="rounded-sm"
                   data-testid="register-password"
                 />
+                <PasswordStrengthMeter password={password} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>

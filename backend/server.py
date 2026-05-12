@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, EmailStr, validator
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
+import secrets
 import jwt
 from passlib.context import CryptContext
 import aiofiles
@@ -45,7 +46,7 @@ from security import (
     validate_user_owns_resource
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage, EmergentObjectStorage
-from emailing import send_welcome_email_background
+from emailing import send_welcome_email_background, send_password_reset_email_background
 from admin import register_admin_routes
 
 # MongoDB connection with SSL certificate handling for Atlas
@@ -449,6 +450,105 @@ async def get_me(user: dict = Depends(get_current_user)):
         plan_expires_at=user.get("plan_expires_at"),
         created_at=user["created_at"]
     )
+
+
+# ============================================================
+# PASSWORD RESET
+# ============================================================
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+@api_router.post("/auth/password-reset/request")
+async def request_password_reset(
+    data: PasswordResetRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Request a password reset. Always returns 200 to avoid email enumeration."""
+    # Rate limiting (reuse login limiter for security)
+    client_ip = get_client_ip(request)
+    try:
+        await check_rate_limit_login(request, client_ip)
+    except Exception:
+        pass
+
+    user = await db.users.find_one({"email": data.email.lower()}, {"_id": 0})
+    if user:
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(hours=1)
+        await db.password_reset_tokens.insert_one({
+            "token": token,
+            "user_id": user["id"],
+            "email": user["email"],
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+            "used": False,
+        })
+
+        # Build reset URL — prefer APP_PUBLIC_URL, fallback to request origin
+        base_url = os.environ.get("APP_PUBLIC_URL")
+        if not base_url:
+            origin = request.headers.get("origin") or request.headers.get("referer", "")
+            base_url = origin.rstrip("/").rstrip("/login").rstrip("/register") if origin else "https://alliefile.com"
+        reset_url = f"{base_url.rstrip('/')}/reset-password?token={token}"
+
+        try:
+            background_tasks.add_task(
+                send_password_reset_email_background,
+                user["email"],
+                user.get("name", ""),
+                reset_url,
+            )
+        except Exception as e:
+            logger.error(f"Failed to enqueue reset email for {user['email']}: {e}")
+        logger.info(f"Password reset requested for user={user['id']}")
+    else:
+        logger.info(f"Password reset requested for unknown email: {data.email}")
+
+    return {"ok": True, "message": "Si un compte existe avec cet email, un lien de réinitialisation a été envoyé."}
+
+
+@api_router.post("/auth/password-reset/confirm")
+async def confirm_password_reset(data: PasswordResetConfirm):
+    """Confirm password reset using the token."""
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 8 caractères")
+
+    token_doc = await db.password_reset_tokens.find_one({"token": data.token}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=400, detail="Lien invalide ou déjà utilisé")
+    if token_doc.get("used"):
+        raise HTTPException(status_code=400, detail="Ce lien a déjà été utilisé")
+    expires_at = token_doc.get("expires_at", "")
+    try:
+        if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Lien expiré, redemandez une réinitialisation")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Lien invalide")
+
+    # Update password
+    new_hash = hash_password(data.new_password)
+    result = await db.users.update_one(
+        {"id": token_doc["user_id"]},
+        {"$set": {"password_hash": new_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=400, detail="Compte introuvable")
+
+    # Invalidate the token
+    await db.password_reset_tokens.update_one(
+        {"token": data.token},
+        {"$set": {"used": True, "used_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    logger.info(f"Password reset confirmed for user={token_doc['user_id']}")
+    return {"ok": True, "message": "Mot de passe réinitialisé avec succès"}
 
 @api_router.get("/auth/stats", response_model=UserStats)
 async def get_user_stats(user: dict = Depends(get_current_user)):

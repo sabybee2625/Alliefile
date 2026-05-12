@@ -89,7 +89,7 @@ const PLANS = [
     price: 'Gratuit',
     period: '',
     description: 'Testez AlliéFile sans engagement',
-    features: ['1 dossier', '15 pièces', '3 liens de partage', 'Analyse IA', 'Export PDF', '1 courrier/jour'],
+    features: ['1 dossier', '15 pièces', '3 liens de partage', 'Analyse IA', 'Un courrier d\'exposé des faits'],
     border: 'border-slate-300',
     cta: 'Commencer gratuitement',
     btnClass: 'bg-white hover:bg-slate-50 text-slate-900 border-2 border-slate-900',

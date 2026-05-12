@@ -2225,6 +2225,19 @@ def format_date_fr(date_str: str) -> str:
 @api_router.get("/dossiers/{dossier_id}/export/pdf")
 async def export_chronology_pdf(dossier_id: str, user: dict = Depends(get_current_user)):
     """Export chronology as professional PDF"""
+    # Plan gating: PDF export reserved to paid plans (free plan blocked)
+    plan = await get_user_plan(user)
+    if not get_plan_limits(plan).can_export_pdf:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "PLAN_LIMIT_EXCEEDED",
+                "feature": "export_pdf",
+                "message": "L'export PDF est réservé aux plans Essentiel et Sérénité. Passez au niveau supérieur pour télécharger votre dossier complet.",
+                "upgrade_url": "/pricing"
+            }
+        )
+
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import cm
@@ -2312,6 +2325,19 @@ async def export_chronology_pdf(dossier_id: str, user: dict = Depends(get_curren
 @api_router.get("/dossiers/{dossier_id}/export/docx")
 async def export_chronology_docx(dossier_id: str, user: dict = Depends(get_current_user)):
     """Export chronology as DOCX narrative"""
+    # Plan gating: DOCX export reserved to paid plans
+    plan = await get_user_plan(user)
+    if not get_plan_limits(plan).can_export_docx:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "PLAN_LIMIT_EXCEEDED",
+                "feature": "export_docx",
+                "message": "L'export DOCX est réservé aux plans Essentiel et Sérénité. Passez au niveau supérieur pour télécharger votre dossier complet.",
+                "upgrade_url": "/pricing"
+            }
+        )
+
     from docx import Document
     from docx.shared import Pt, Inches, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -2410,19 +2436,37 @@ async def generate_document(dossier_id: str, request: AssistantRequest, user: di
     # Check plan restrictions for assistant
     plan = await get_user_plan(user)
     limits = get_plan_limits(plan)
-    
-    # FREE plan: only expose_faits allowed
-    if plan == "free" and request.document_type != "expose_faits":
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error": "PLAN_LIMIT_EXCEEDED",
-                "message": "Le plan GRATUIT permet uniquement la génération d'exposé des faits. Passez à un plan supérieur pour accéder aux autres types de documents.",
-                "plan": plan,
-                "allowed_types": ["expose_faits"],
-                "upgrade_url": "/pricing"
-            }
-        )
+
+    # FREE plan: only expose_faits allowed, AND only 1 generation per dossier (lifetime)
+    if plan == "free":
+        if request.document_type != "expose_faits":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "PLAN_LIMIT_EXCEEDED",
+                    "feature": "assistant_document_type",
+                    "message": "Le plan Découverte permet uniquement la génération d'un exposé des faits. Passez au plan Essentiel pour rédiger des courriers et bien plus.",
+                    "plan": plan,
+                    "allowed_types": ["expose_faits"],
+                    "upgrade_url": "/pricing"
+                }
+            )
+        # Already generated for THIS dossier?
+        existing = await db.assistant_generations.count_documents({
+            "user_id": user["id"],
+            "dossier_id": dossier_id,
+        })
+        if existing >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "PLAN_LIMIT_EXCEEDED",
+                    "feature": "assistant_per_dossier",
+                    "message": "Le plan Découverte autorise un seul exposé des faits par dossier. Passez au plan Essentiel pour la rédaction illimitée.",
+                    "plan": plan,
+                    "upgrade_url": "/pricing"
+                }
+            )
     
     # Check daily usage limit
     assistant_uses = user.get("assistant_uses_today", 0)
@@ -2582,6 +2626,15 @@ Rédige le projet de requête pour la juridiction {jurisdiction_label}:"""
             {"id": user["id"]},
             {"$inc": {"assistant_uses_today": 1}}
         )
+
+        # Track generation per dossier (used for free-plan "1 per dossier" check)
+        await db.assistant_generations.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "dossier_id": dossier_id,
+            "document_type": request.document_type,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
         
         warnings = []
         if "À confirmer" in response:

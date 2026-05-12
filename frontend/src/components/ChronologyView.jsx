@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { dossiersApi } from '../lib/api';
+import { dossiersApi, authApi } from '../lib/api';
 import { formatDate, pieceTypeLabels, downloadBlob } from '../lib/utils';
 import { toast } from 'sonner';
 import { 
@@ -10,7 +10,8 @@ import {
   Calendar, 
   FileText, 
   Download,
-  FileDown
+  FileDown,
+  Lock
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -19,11 +20,29 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { UpgradeModal } from './UpgradeModal';
+
+// Lit l'erreur d'un blob quand le serveur a renvoyé du JSON (cas 403 PLAN_LIMIT_EXCEEDED)
+async function parseBlobError(error) {
+  const data = error?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      return parsed?.detail;
+    } catch (_) {
+      return null;
+    }
+  }
+  return data?.detail;
+}
 
 export const ChronologyView = ({ dossierId, dossierTitle }) => {
   const [chronology, setChronology] = useState(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [upgrade, setUpgrade] = useState({ open: false, feature: null, message: null });
+  const [userPlan, setUserPlan] = useState(null);
 
   useEffect(() => {
     const fetchChronology = async () => {
@@ -38,29 +57,49 @@ export const ChronologyView = ({ dossierId, dossierTitle }) => {
     };
 
     fetchChronology();
+    // Récupère le plan pour décider du UX (cadenas ou modale)
+    authApi.me?.().then((r) => setUserPlan(r.data?.plan)).catch(() => {});
   }, [dossierId]);
 
+  const isFree = userPlan === 'free';
+
+  const triggerExportUpsell = (feature) => {
+    setUpgrade({ open: true, feature, message: null });
+  };
+
   const handleExportPdf = async () => {
+    if (isFree) { triggerExportUpsell('export_pdf'); return; }
     setExporting(true);
     try {
       const res = await dossiersApi.exportPdf(dossierId);
       downloadBlob(res.data, `chronologie_${dossierTitle || 'dossier'}.pdf`);
       toast.success('PDF chronologie téléchargé');
     } catch (error) {
-      toast.error('Erreur lors de l\'export PDF');
+      const detail = await parseBlobError(error);
+      if (detail?.error === 'PLAN_LIMIT_EXCEEDED') {
+        setUpgrade({ open: true, feature: detail.feature || 'export_pdf', message: detail.message });
+      } else {
+        toast.error('Erreur lors de l\'export PDF');
+      }
     } finally {
       setExporting(false);
     }
   };
 
   const handleExportDocx = async () => {
+    if (isFree) { triggerExportUpsell('export_docx'); return; }
     setExporting(true);
     try {
       const res = await dossiersApi.exportDocx(dossierId);
       downloadBlob(res.data, `chronologie_narrative_${dossierTitle || 'dossier'}.docx`);
       toast.success('DOCX chronologie téléchargé');
     } catch (error) {
-      toast.error('Erreur lors de l\'export DOCX');
+      const detail = await parseBlobError(error);
+      if (detail?.error === 'PLAN_LIMIT_EXCEEDED') {
+        setUpgrade({ open: true, feature: detail.feature || 'export_docx', message: detail.message });
+      } else {
+        toast.error('Erreur lors de l\'export DOCX');
+      }
     } finally {
       setExporting(false);
     }
@@ -125,11 +164,13 @@ export const ChronologyView = ({ dossierId, dossierTitle }) => {
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={handleExportPdf} data-testid="export-pdf">
               <FileText className="w-4 h-4 mr-2 text-red-600" />
-              PDF (tableau structuré)
+              <span className="flex-1">PDF (tableau structuré)</span>
+              {isFree && <Lock className="w-3.5 h-3.5 ml-2 text-amber-500" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleExportDocx} data-testid="export-docx">
               <FileText className="w-4 h-4 mr-2 text-blue-600" />
-              DOCX (chronologie narrative)
+              <span className="flex-1">DOCX (chronologie narrative)</span>
+              {isFree && <Lock className="w-3.5 h-3.5 ml-2 text-amber-500" />}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem 
@@ -229,6 +270,13 @@ export const ChronologyView = ({ dossierId, dossierTitle }) => {
         <strong>Conseil :</strong> Utilisez l'export PDF pour une version imprimable professionnelle, 
         ou le DOCX pour une chronologie narrative modifiable.
       </div>
+
+      <UpgradeModal
+        open={upgrade.open}
+        onOpenChange={(o) => setUpgrade((s) => ({ ...s, open: o }))}
+        feature={upgrade.feature}
+        message={upgrade.message}
+      />
     </div>
   );
 };

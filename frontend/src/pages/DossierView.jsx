@@ -31,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
-import { dossiersApi, piecesApi } from '../lib/api';
+import { dossiersApi, piecesApi, authApi } from '../lib/api';
 import { formatDate, pieceTypeLabels, statusLabels, downloadBlob } from '../lib/utils';
 import { toast } from 'sonner';
 import {
@@ -65,12 +65,26 @@ import {
   Tag,
   ChevronDown,
   UploadCloud,
+  Lock,
 } from 'lucide-react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { PieceValidationModal } from '../components/PieceValidationModal';
 import { ChronologyView } from '../components/ChronologyView';
 import { AssistantView } from '../components/AssistantView';
 import { FilePreviewModal } from '../components/FilePreviewModal';
+import { UpgradeModal } from '../components/UpgradeModal';
+
+// Lit l'erreur d'un blob quand le serveur a renvoyé du JSON (cas 403 PLAN_LIMIT_EXCEEDED)
+async function parseBlobError(error) {
+  const data = error?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      return JSON.parse(text)?.detail;
+    } catch (_) { return null; }
+  }
+  return data?.detail;
+}
 
 // Analysis status labels
 const analysisStatusLabels = {
@@ -129,6 +143,40 @@ const DossierView = () => {
   const tabsRef = useRef(null);
   const reuploadInputRef = useRef(null);
   const bulkReuploadInputRef = useRef(null);
+
+  // User plan + upgrade modal
+  const [userPlan, setUserPlan] = useState(null);
+  const [upgrade, setUpgrade] = useState({ open: false, feature: null, message: null });
+  const isFree = userPlan === 'free';
+  useEffect(() => {
+    authApi.me().then((r) => setUserPlan(r.data?.plan)).catch(() => {});
+  }, []);
+  const handleExportPdf = async () => {
+    if (isFree) { setUpgrade({ open: true, feature: 'export_pdf', message: null }); return; }
+    try {
+      const res = await dossiersApi.exportPdf(id);
+      downloadBlob(res.data, `chronologie_${dossier?.title || 'dossier'}.pdf`);
+      toast.success('PDF téléchargé');
+    } catch (err) {
+      const detail = await parseBlobError(err);
+      if (detail?.error === 'PLAN_LIMIT_EXCEEDED') {
+        setUpgrade({ open: true, feature: detail.feature || 'export_pdf', message: detail.message });
+      } else { toast.error('Erreur'); }
+    }
+  };
+  const handleExportDocx = async () => {
+    if (isFree) { setUpgrade({ open: true, feature: 'export_docx', message: null }); return; }
+    try {
+      const res = await dossiersApi.exportDocx(id);
+      downloadBlob(res.data, `chronologie_${dossier?.title || 'dossier'}.docx`);
+      toast.success('DOCX téléchargé');
+    } catch (err) {
+      const detail = await parseBlobError(err);
+      if (detail?.error === 'PLAN_LIMIT_EXCEEDED') {
+        setUpgrade({ open: true, feature: detail.feature || 'export_docx', message: detail.message });
+      } else { toast.error('Erreur'); }
+    }
+  };
   const [reuploadTarget, setReuploadTarget] = useState(null);
   const [reuploading, setReuploading] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
@@ -836,31 +884,15 @@ const DossierView = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={async () => {
-                    try {
-                      const res = await dossiersApi.exportPdf(id);
-                      downloadBlob(res.data, `chronologie_${dossier.title}.pdf`);
-                      toast.success('PDF téléchargé');
-                    } catch { toast.error('Erreur'); }
-                  }}
-                  data-testid="export-pdf"
-                >
+                <DropdownMenuItem onClick={handleExportPdf} data-testid="export-pdf">
                   <FileText className="w-4 h-4 mr-2 text-red-600" />
-                  Chronologie PDF
+                  <span className="flex-1">Chronologie PDF</span>
+                  {isFree && <Lock className="w-3.5 h-3.5 ml-2 text-amber-500" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={async () => {
-                    try {
-                      const res = await dossiersApi.exportDocx(id);
-                      downloadBlob(res.data, `chronologie_${dossier.title}.docx`);
-                      toast.success('DOCX téléchargé');
-                    } catch { toast.error('Erreur'); }
-                  }}
-                  data-testid="export-docx"
-                >
+                <DropdownMenuItem onClick={handleExportDocx} data-testid="export-docx">
                   <FileText className="w-4 h-4 mr-2 text-blue-600" />
-                  Chronologie DOCX
+                  <span className="flex-1">Chronologie DOCX</span>
+                  {isFree && <Lock className="w-3.5 h-3.5 ml-2 text-amber-500" />}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleExportZip} data-testid="export-zip">
@@ -1641,6 +1673,13 @@ const DossierView = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <UpgradeModal
+        open={upgrade.open}
+        onOpenChange={(o) => setUpgrade((s) => ({ ...s, open: o }))}
+        feature={upgrade.feature}
+        message={upgrade.message}
+      />
     </Layout>
   );
 };

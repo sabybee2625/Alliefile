@@ -14,7 +14,7 @@ import {
 } from './ui/select';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { dossiersApi } from '../lib/api';
+import { dossiersApi, authApi } from '../lib/api';
 import { formatDate, downloadBlob } from '../lib/utils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -30,7 +30,9 @@ import {
   CheckCircle,
   Info,
   Scale,
+  Lock,
 } from 'lucide-react';
+import { UpgradeModal } from './UpgradeModal';
 
 // Types de documents génériques (sans référence JAF codée en dur)
 const documentTypes = [
@@ -61,6 +63,13 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
   const [editedContent, setEditedContent] = useState('');
+  const [userPlan, setUserPlan] = useState(null);
+  const [upgrade, setUpgrade] = useState({ open: false, feature: null, message: null });
+  const isFree = userPlan === 'free';
+
+  useEffect(() => {
+    authApi.me().then((r) => setUserPlan(r.data?.plan)).catch(() => {});
+  }, []);
 
   // Filter only validated pieces
   const validatedPieces = pieces.filter(p => p.status === 'pret');
@@ -92,6 +101,12 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
       return;
     }
 
+    // Free plan: only expose_faits → block other types client-side too
+    if (isFree && documentType !== 'expose_faits') {
+      setUpgrade({ open: true, feature: 'assistant_document_type', message: null });
+      return;
+    }
+
     setGenerating(true);
     setResult(null);
     
@@ -108,7 +123,16 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
       setEditedContent(res.data.content);
       toast.success('Document généré');
     } catch (error) {
-      toast.error('Erreur lors de la génération');
+      const detail = error?.response?.data?.detail;
+      if (detail && typeof detail === 'object' && detail.error === 'PLAN_LIMIT_EXCEEDED') {
+        setUpgrade({
+          open: true,
+          feature: detail.feature || 'assistant_per_dossier',
+          message: detail.message,
+        });
+      } else {
+        toast.error('Erreur lors de la génération');
+      }
     } finally {
       setGenerating(false);
     }
@@ -212,14 +236,22 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {documentTypes.map(dt => (
-                    <SelectItem key={dt.value} value={dt.value}>
-                      <div>
-                        <div className="font-medium">{dt.label}</div>
-                        <div className="text-xs text-slate-500">{dt.description}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {documentTypes.map(dt => {
+                    const locked = isFree && dt.value !== 'expose_faits';
+                    return (
+                      <SelectItem key={dt.value} value={dt.value}>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <div className="font-medium flex items-center gap-1.5">
+                              {dt.label}
+                              {locked && <Lock className="w-3 h-3 text-amber-500" />}
+                            </div>
+                            <div className="text-xs text-slate-500">{dt.description}</div>
+                          </div>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -440,6 +472,13 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
           </CardContent>
         </Card>
       </div>
+
+      <UpgradeModal
+        open={upgrade.open}
+        onOpenChange={(o) => setUpgrade((s) => ({ ...s, open: o }))}
+        feature={upgrade.feature}
+        message={upgrade.message}
+      />
     </div>
   );
 };

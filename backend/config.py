@@ -143,9 +143,9 @@ PLAN_LIMITS = {
         max_share_links=3,
         assistant_daily_limit=1,
         can_export_docx=False,
-        can_export_pdf=True,
+        can_export_pdf=False,
         can_advanced_share=False,
-        can_use_assistant=True,  # Only expose_faits allowed
+        can_use_assistant=True,  # Only 1 expose_faits per dossier
         storage_mb=100
     ),
     # "standard" is the internal key kept for backwards compatibility with

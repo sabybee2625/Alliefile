@@ -217,11 +217,7 @@ const PricingPage = () => {
                 </li>
                 <li className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-emerald-500" />
-                  Export PDF
-                </li>
-                <li className="flex items-center gap-2 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  1 courrier/jour
+                  Un courrier d'exposé des faits
                 </li>
               </ul>
             </CardContent>

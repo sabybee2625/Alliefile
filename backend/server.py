@@ -170,6 +170,10 @@ class AIProposal(BaseModel):
     resume_element_cle: Optional[str] = None
     mots_cles: List[str] = []
     extrait_justificatif: Optional[str] = None
+    # V2 enrichment (neutral classification)
+    tags_thematiques: List[str] = []   # ex: famille, travail, sante, finances, logement, violence, harcelement, administratif
+    sujets_concernes: List[str] = []   # ex: utilisateur, conjoint, enfant, employeur, bailleur, tiers, administration
+    nature_document: Optional[str] = None  # officiel | prive | temoignage | medical | financier | autre
 
 class PieceValidation(BaseModel):
     type_piece: str
@@ -180,6 +184,9 @@ class PieceValidation(BaseModel):
     resume_ou: Optional[str] = None
     resume_element_cle: Optional[str] = None
     mots_cles: List[str] = []
+    tags_thematiques: List[str] = []
+    sujets_concernes: List[str] = []
+    nature_document: Optional[str] = None
 
 class PieceResponse(BaseModel):
     id: str
@@ -2056,6 +2063,18 @@ IMPORTANT:
 - N'invente JAMAIS d'information. Si tu ne trouves pas une information, indique "Non identifié".
 - Pour chaque information, indique un niveau de confiance: "faible", "moyen", ou "fort".
 - Cite un extrait du document (max 200 caractères) qui justifie ta proposition.
+- Classifie le document de manière NEUTRE selon 3 axes :
+  • tags_thematiques : zéro ou plusieurs parmi cette liste fermée :
+    "famille", "travail", "sante", "finances", "logement", "violence",
+    "harcelement", "administratif", "scolaire", "succession", "consommation"
+  • sujets_concernes : qui est concerné, parmi cette liste fermée :
+    "utilisateur", "conjoint", "ex-conjoint", "enfant", "employeur",
+    "bailleur", "voisin", "administration", "medecin", "police", "tiers"
+  • nature_document : un seul mot parmi :
+    "officiel" (acte/décision d'autorité), "prive" (courrier/SMS/email perso),
+    "temoignage" (attestation, déclaration tiers), "medical" (certif/ordonnance),
+    "financier" (facture/relevé/contrat), "autre"
+- Tu DOIS rester strictement factuel et neutre. Ne juge pas, ne qualifie pas, n'interprete pas. Ne signale pas l'utilisateur comme victime ou coupable.
 
 Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
 {
@@ -2070,7 +2089,10 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
   "resume_ou": "lieu si mentionné ou null",
   "resume_element_cle": "diagnostic, menace, refus, constat, montant, décision, etc.",
   "mots_cles": ["mot1", "mot2", "mot3"],
-  "extrait_justificatif": "extrait du document justifiant l'analyse (max 200 car.)"
+  "extrait_justificatif": "extrait du document justifiant l'analyse (max 200 car.)",
+  "tags_thematiques": ["famille", "violence"],
+  "sujets_concernes": ["utilisateur", "conjoint"],
+  "nature_document": "officiel"
 }"""
 
         chat = LlmChat(
@@ -2125,6 +2147,87 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
         raise
 
 # ===================== CHRONOLOGY & EXPORTS =====================
+
+# Suggestions d'aide à la constitution selon les thèmes détectés (neutres, génériques)
+THEME_HINTS = {
+    "famille": [
+        "Acte de mariage / livret de famille",
+        "Jugements ou ordonnances antérieurs",
+        "Échanges écrits avec la partie adverse (SMS, emails, courriers)",
+    ],
+    "travail": [
+        "Contrat de travail et avenants",
+        "Bulletins de salaire des 12 derniers mois",
+        "Échanges écrits avec l'employeur",
+    ],
+    "sante": [
+        "Certificats médicaux datés",
+        "Comptes rendus d'hospitalisation ou d'examens",
+        "Ordonnances et prescriptions",
+    ],
+    "violence": [
+        "Plaintes ou mains courantes déposées",
+        "Certificats médicaux constatant des lésions",
+        "Témoignages écrits de proches ou voisins",
+    ],
+    "harcelement": [
+        "Captures d'écran horodatées des échanges",
+        "Traces numériques (SMS, emails, réseaux sociaux)",
+        "Témoignages écrits de témoins directs",
+    ],
+    "logement": [
+        "Bail de location et annexes",
+        "Quittances de loyer / appels de charges",
+        "Courriers recommandés avec accusé de réception",
+    ],
+    "finances": [
+        "Relevés bancaires des périodes concernées",
+        "Factures et justificatifs de paiement",
+        "Contrats et conditions générales",
+    ],
+    "administratif": [
+        "Décisions administratives (notifications, refus)",
+        "Courriers recommandés avec accusé de réception",
+        "Justificatifs de démarches effectuées",
+    ],
+    "scolaire": [
+        "Bulletins scolaires de la période concernée",
+        "Échanges avec l'établissement (emails, courriers)",
+        "Rapports éventuels (équipe éducative, psychologue)",
+    ],
+    "succession": [
+        "Acte de décès et livret de famille",
+        "Testament éventuel",
+        "Inventaire et évaluations des biens",
+    ],
+    "consommation": [
+        "Contrat ou bon de commande",
+        "Factures et preuves de paiement",
+        "Échanges écrits avec le professionnel",
+    ],
+}
+
+
+def _piece_classification(piece: dict) -> dict:
+    """Récupère tags/sujets/nature depuis validated_data en priorité, sinon ai_proposal."""
+    v = piece.get("validated_data") or {}
+    a = piece.get("ai_proposal") or {}
+    return {
+        "tags_thematiques": v.get("tags_thematiques") or a.get("tags_thematiques") or [],
+        "sujets_concernes": v.get("sujets_concernes") or a.get("sujets_concernes") or [],
+        "nature_document": v.get("nature_document") or a.get("nature_document"),
+    }
+
+
+@api_router.get("/dossiers/{dossier_id}/synthesis")
+async def get_synthesis(dossier_id: str, user: dict = Depends(get_current_user)):
+    """Synthèse factuelle des thèmes, sujets et natures détectés dans le dossier."""
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+    pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0}).to_list(2000)
+    return _compute_synthesis(pieces)
+
 
 @api_router.get("/dossiers/{dossier_id}/chronology")
 async def get_chronology(dossier_id: str, user: dict = Depends(get_current_user)):
@@ -2729,7 +2832,42 @@ async def get_shared_dossier(token: str):
             "description": dossier["description"]
         },
         "pieces": [PieceResponse(**p) for p in pieces],
-        "chronology": chronology
+        "chronology": chronology,
+        "synthesis": _compute_synthesis(pieces),
+    }
+
+
+def _compute_synthesis(pieces: list) -> dict:
+    """Helper to compute synthesis stats from a list of pieces (used by shared + private endpoints)."""
+    theme_counts: dict = {}
+    subject_counts: dict = {}
+    nature_counts: dict = {}
+    analyzed = 0
+    for p in pieces:
+        c = _piece_classification(p)
+        if not (c["tags_thematiques"] or c["sujets_concernes"] or c["nature_document"]):
+            continue
+        analyzed += 1
+        for t in c["tags_thematiques"]:
+            theme_counts[t] = theme_counts.get(t, 0) + 1
+        for s in c["sujets_concernes"]:
+            subject_counts[s] = subject_counts.get(s, 0) + 1
+        if c["nature_document"]:
+            nature_counts[c["nature_document"]] = nature_counts.get(c["nature_document"], 0) + 1
+    themes_sorted = [{"key": k, "count": v} for k, v in sorted(theme_counts.items(), key=lambda x: -x[1])]
+    subjects_sorted = [{"key": k, "count": v} for k, v in sorted(subject_counts.items(), key=lambda x: -x[1])]
+    natures_sorted = [{"key": k, "count": v} for k, v in sorted(nature_counts.items(), key=lambda x: -x[1])]
+    hints = []
+    for entry in themes_sorted[:3]:
+        for h in THEME_HINTS.get(entry["key"], []):
+            hints.append({"theme": entry["key"], "suggestion": h})
+    return {
+        "total_pieces": len(pieces),
+        "pieces_classifiees": analyzed,
+        "themes": themes_sorted,
+        "sujets": subjects_sorted,
+        "natures": natures_sorted,
+        "hints": hints,
     }
 
 @api_router.get("/shared/{token}/piece/{piece_id}/file")

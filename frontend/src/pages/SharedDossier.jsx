@@ -18,6 +18,9 @@ import {
   Download,
   FileDown,
 } from 'lucide-react';
+import { PieceFilterBar, usePieceFilters } from '../components/PieceFilterBar';
+import { PieceThemeBadges } from '../components/PieceThemeBadges';
+import { DossierSynthesis } from '../components/DossierSynthesis';
 
 const SharedDossier = () => {
   const { token } = useParams();
@@ -46,6 +49,9 @@ const SharedDossier = () => {
 
     fetchData();
   }, [token]);
+
+  // Hooks must be called unconditionally — before any early-return
+  const sharedFilters = usePieceFilters();
 
   const handleDownloadPdf = async () => {
     setDownloading(true);
@@ -89,7 +95,8 @@ const SharedDossier = () => {
     );
   }
 
-  const { dossier, pieces, chronology } = data;
+  const { dossier, pieces, chronology, synthesis } = data;
+  const visiblePieces = sharedFilters.applyTo(pieces || []);
   const validatedPieces = pieces.filter(p => p.status === 'pret');
 
   return (
@@ -256,14 +263,27 @@ const SharedDossier = () => {
             <TabsContent value="pieces">
               <div className="space-y-3">
                 <h2 className="font-heading font-semibold text-lg text-slate-900">Pièces du dossier</h2>
-                {pieces.length === 0 ? (
+
+                <PieceFilterBar
+                  pieces={pieces}
+                  activeThemes={sharedFilters.activeThemes}
+                  activeSubjects={sharedFilters.activeSubjects}
+                  onToggleTheme={sharedFilters.toggleTheme}
+                  onToggleSubject={sharedFilters.toggleSubject}
+                  onClear={sharedFilters.clear}
+                />
+                <DossierSynthesis synthesis={synthesis} />
+
+                {visiblePieces.length === 0 ? (
                   <Card className="border-slate-200">
                     <CardContent className="py-8 text-center">
-                      <p className="text-slate-500">Aucune pièce dans ce dossier</p>
+                      <p className="text-slate-500">
+                        {pieces.length === 0 ? 'Aucune pièce dans ce dossier' : 'Aucune pièce ne correspond aux filtres sélectionnés.'}
+                      </p>
                     </CardContent>
                   </Card>
                 ) : (
-                  pieces.map((piece, index) => (
+                  visiblePieces.map((piece, index) => (
                     <Card
                       key={piece.id}
                       className="border-slate-200 animate-fade-in"
@@ -287,7 +307,12 @@ const SharedDossier = () => {
                                   {statusLabels[piece.status]}
                                 </Badge>
                               </div>
-                              <div className="flex items-center gap-4 text-sm text-slate-500">
+                              <PieceThemeBadges
+                                themes={piece.validated_data?.tags_thematiques?.length ? piece.validated_data.tags_thematiques : (piece.ai_proposal?.tags_thematiques || [])}
+                                subjects={piece.validated_data?.sujets_concernes?.length ? piece.validated_data.sujets_concernes : (piece.ai_proposal?.sujets_concernes || [])}
+                                size="xs"
+                              />
+                              <div className="flex items-center gap-4 text-sm text-slate-500 mt-1">
                                 {(piece.validated_data?.type_piece || piece.ai_proposal?.type_piece) && (
                                   <span>
                                     {pieceTypeLabels[piece.validated_data?.type_piece || piece.ai_proposal?.type_piece]}

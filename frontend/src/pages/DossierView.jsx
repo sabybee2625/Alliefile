@@ -73,6 +73,9 @@ import { ChronologyView } from '../components/ChronologyView';
 import { AssistantView } from '../components/AssistantView';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { PieceFilterBar, usePieceFilters } from '../components/PieceFilterBar';
+import { PieceThemeBadges } from '../components/PieceThemeBadges';
+import { DossierSynthesis } from '../components/DossierSynthesis';
 
 // Lit l'erreur d'un blob quand le serveur a renvoyé du JSON (cas 403 PLAN_LIMIT_EXCEEDED)
 async function parseBlobError(error) {
@@ -268,8 +271,11 @@ const DossierView = () => {
     setShowErrors(false);
   };
 
+  // V2: thematic/subject filtering (sticky bar)
+  const pieceFilters = usePieceFilters();
+
   // Filter pieces based on current filter
-  const filteredPieces = pieces.filter(piece => {
+  const filteredPieces = pieceFilters.applyTo(pieces.filter(piece => {
     // Status filter
     if (statusFilter === 'a_verifier' && piece.status !== 'a_verifier') return false;
     if (statusFilter === 'pret' && piece.status !== 'pret') return false;
@@ -286,7 +292,7 @@ const DossierView = () => {
     if (showErrors && piece.analysis_status !== 'error') return false;
     
     return true;
-  });
+  }));
 
   // Get unique types from validated pieces
   const availableTypes = [...new Set(pieces
@@ -1042,6 +1048,17 @@ const DossierView = () => {
 
           {/* PIECES TAB */}
           <TabsContent value="pieces" className="space-y-4">
+            {/* V2: Sticky thematic filter bar + synthesis */}
+            <PieceFilterBar
+              pieces={pieces}
+              activeThemes={pieceFilters.activeThemes}
+              activeSubjects={pieceFilters.activeSubjects}
+              onToggleTheme={pieceFilters.toggleTheme}
+              onToggleSubject={pieceFilters.toggleSubject}
+              onClear={pieceFilters.clear}
+            />
+            <DossierSynthesis dossierId={id} />
+
             {/* Active Filter Banner */}
             {hasActiveFilter && (
               <div className="flex items-center justify-between p-3 bg-slate-100 border border-slate-200 rounded-sm" data-testid="filter-banner">
@@ -1308,6 +1325,11 @@ const DossierView = () => {
                                 </Badge>
                               )}
                             </div>
+                            <PieceThemeBadges
+                              themes={piece.validated_data?.tags_thematiques?.length ? piece.validated_data.tags_thematiques : (piece.ai_proposal?.tags_thematiques || [])}
+                              subjects={piece.validated_data?.sujets_concernes?.length ? piece.validated_data.sujets_concernes : (piece.ai_proposal?.sujets_concernes || [])}
+                              size="xs"
+                            />
                             <div className="flex items-center gap-4 text-sm text-slate-500">
                               {(piece.validated_data?.type_piece || piece.ai_proposal?.type_piece) && (
                                 <span>{pieceTypeLabels[piece.validated_data?.type_piece || piece.ai_proposal?.type_piece]}</span>

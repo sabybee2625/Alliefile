@@ -1057,7 +1057,7 @@ const DossierView = () => {
               onToggleSubject={pieceFilters.toggleSubject}
               onClear={pieceFilters.clear}
             />
-            <DossierSynthesis dossierId={id} />
+            <DossierSynthesis dossierId={id} onChanged={fetchData} />
 
             {/* Active Filter Banner */}
             {hasActiveFilter && (

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { getThemeStyle, getSubjectLabel } from './PieceThemeBadges';
-import { Lightbulb, BarChart3 } from 'lucide-react';
+import { Lightbulb, BarChart3, Loader2, Wand2 } from 'lucide-react';
+import { dossiersApi } from '../lib/api';
+import { toast } from 'sonner';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -14,12 +16,12 @@ const API = process.env.REACT_APP_BACKEND_URL;
  *  - synthesis:  objet déjà calculé (priorité sur les fetch — utilisé par SharedDossier qui reçoit synthesis dans /shared/{token})
  *  - compact:    boolean
  */
-export const DossierSynthesis = ({ dossierId, shareToken, synthesis: synthesisProp, compact = false }) => {
+export const DossierSynthesis = ({ dossierId, shareToken, synthesis: synthesisProp, compact = false, onChanged }) => {
   const [synthesis, setSynthesis] = useState(synthesisProp || null);
   const [loading, setLoading] = useState(!synthesisProp);
+  const [reclassifying, setReclassifying] = useState(false);
 
-  useEffect(() => {
-    if (synthesisProp) { setSynthesis(synthesisProp); setLoading(false); return; }
+  const fetchSynthesis = () => {
     if (!dossierId) return;
     const token = localStorage.getItem('token');
     axios
@@ -30,21 +32,63 @@ export const DossierSynthesis = ({ dossierId, shareToken, synthesis: synthesisPr
       .then((r) => setSynthesis(r.data))
       .catch(() => setSynthesis(null))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (synthesisProp) { setSynthesis(synthesisProp); setLoading(false); return; }
+    fetchSynthesis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dossierId, synthesisProp]);
 
+  const handleReclassify = async () => {
+    if (!dossierId) return;
+    setReclassifying(true);
+    try {
+      const res = await dossiersApi.reclassify(dossierId);
+      const { updated, skipped, total } = res.data;
+      toast.success(`Classement terminé : ${updated} pièce(s) classée(s), ${skipped} déjà à jour.`);
+      fetchSynthesis();
+      onChanged?.();
+    } catch (e) {
+      toast.error("Erreur lors du classement");
+    } finally {
+      setReclassifying(false);
+    }
+  };
+
   if (loading) return null;
-  if (!synthesis || !synthesis.pieces_classifiees) return null;
+  // Affiche toujours en mode privé (pour pouvoir lancer le reclassement même si 0 pièce classée)
+  if (!synthesis) return null;
+  if (!synthesis.pieces_classifiees && !dossierId) return null;
 
   const top = synthesis.themes.slice(0, 5);
+  const needsClassification = dossierId && synthesis.total_pieces > 0 && synthesis.pieces_classifiees < synthesis.total_pieces;
 
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-sm p-4 mb-4" data-testid="dossier-synthesis">
-      <div className="flex items-center gap-2 mb-3">
-        <BarChart3 className="w-4 h-4 text-slate-600" />
-        <h3 className="text-sm font-semibold text-slate-900">Synthèse du dossier</h3>
-        <span className="text-xs text-slate-500">
-          ({synthesis.pieces_classifiees}/{synthesis.total_pieces} pièces analysées)
-        </span>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-slate-600" />
+          <h3 className="text-sm font-semibold text-slate-900">Synthèse du dossier</h3>
+          <span className="text-xs text-slate-500">
+            ({synthesis.pieces_classifiees}/{synthesis.total_pieces} pièces classées)
+          </span>
+        </div>
+        {needsClassification && (
+          <button
+            type="button"
+            onClick={handleReclassify}
+            disabled={reclassifying}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 px-3 py-1.5 rounded-sm"
+            data-testid="reclassify-button"
+          >
+            {reclassifying ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" />Classement…</>
+            ) : (
+              <><Wand2 className="w-3.5 h-3.5" />Classer les anciennes pièces</>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Thèmes top */}

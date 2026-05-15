@@ -48,6 +48,7 @@ from security import (
 from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage, EmergentObjectStorage
 from emailing import send_welcome_email_background, send_password_reset_email_background
 from admin import register_admin_routes
+from piece_classifier import classify_piece
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -2227,6 +2228,59 @@ async def get_synthesis(dossier_id: str, user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Dossier not found")
     pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0}).to_list(2000)
     return _compute_synthesis(pieces)
+
+
+@api_router.post("/dossiers/{dossier_id}/reclassify")
+async def reclassify_dossier_pieces(
+    dossier_id: str,
+    force: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Classification rétroactive (par mots-clés, SANS appel IA) des pièces existantes
+    pour ajouter tags_thematiques / sujets_concernes / nature_document.
+
+    Par défaut, ne met à jour QUE les pièces sans classification.
+    `force=true` ré-applique sur toutes les pièces.
+    """
+    dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier not found")
+
+    pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0}).to_list(2000)
+    updated = 0
+    skipped = 0
+    for p in pieces:
+        v = p.get("validated_data") or {}
+        a = p.get("ai_proposal") or {}
+        already_classified = bool(
+            v.get("tags_thematiques") or a.get("tags_thematiques")
+        )
+        if already_classified and not force:
+            skipped += 1
+            continue
+
+        cls = classify_piece(p)
+
+        # Mise à jour: on enrichit validated_data (autoritaire) si elle existe,
+        # sinon ai_proposal.
+        target_field = "validated_data" if v else "ai_proposal"
+        target_doc = v if v else (a or {})
+        target_doc["tags_thematiques"] = cls["tags_thematiques"]
+        target_doc["sujets_concernes"] = cls["sujets_concernes"]
+        if cls["nature_document"] and not target_doc.get("nature_document"):
+            target_doc["nature_document"] = cls["nature_document"]
+
+        await db.pieces.update_one(
+            {"id": p["id"]},
+            {"$set": {
+                target_field: target_doc,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        updated += 1
+
+    return {"ok": True, "updated": updated, "skipped": skipped, "total": len(pieces)}
 
 
 @api_router.get("/dossiers/{dossier_id}/chronology")

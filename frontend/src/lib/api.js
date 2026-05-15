@@ -47,6 +47,8 @@ export const dossiersApi = {
   delete: (id) => api.delete(`/dossiers/${id}`),
   renumber: (id) => api.post(`/dossiers/${id}/renumber`),
   getChronology: (id) => api.get(`/dossiers/${id}/chronology`),
+  getSynthesis: (id) => api.get(`/dossiers/${id}/synthesis`),
+  reclassify: (id, force = false) => api.post(`/dossiers/${id}/reclassify`, null, { params: { force } }),
   exportCsv: (id) => api.get(`/dossiers/${id}/export/csv`, { responseType: 'blob' }),
   exportZip: (id) => api.get(`/dossiers/${id}/export/zip`, { responseType: 'blob' }),
   exportPdf: (id) => api.get(`/dossiers/${id}/export/pdf`, { responseType: 'blob' }),

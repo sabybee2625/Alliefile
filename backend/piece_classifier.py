@@ -116,6 +116,48 @@ TYPE_TO_NATURE = {
 }
 
 
+# Mapping des anciennes clés (issues du dictionnaire THEME_KEYWORDS ou des
+# anciennes sorties IA) vers les 5 domaines juridiques canoniques utilisés
+# dans le frontend (PÉNAL, CIVIL_FAMILLE, IMMOBILIER_LOGEMENT, TRAVAIL, ADMINISTRATIF).
+LEGACY_TO_DOMAIN = {
+    "violence":      "PÉNAL",
+    "harcelement":   "PÉNAL",
+    "sante":         "PÉNAL",
+    "famille":       "CIVIL_FAMILLE",
+    "succession":    "CIVIL_FAMILLE",
+    "consommation":  "CIVIL_FAMILLE",
+    "logement":      "IMMOBILIER_LOGEMENT",
+    "travail":       "TRAVAIL",
+    "administratif": "ADMINISTRATIF",
+    "financier":     "ADMINISTRATIF",
+    "finances":      "ADMINISTRATIF",
+    "scolaire":      "ADMINISTRATIF",
+}
+
+# Domaines juridiques canoniques (whitelist).
+CANONICAL_DOMAINS = {
+    "PÉNAL", "CIVIL_FAMILLE", "IMMOBILIER_LOGEMENT", "TRAVAIL", "ADMINISTRATIF",
+}
+
+
+def normalize_themes(raw_themes) -> List[str]:
+    """
+    Convertit n'importe quelle liste de thèmes (anciennes clés ou nouvelles)
+    en liste dédupliquée des 5 domaines juridiques canoniques, ordre stable.
+    Les valeurs non reconnues sont conservées telles quelles si déjà canoniques,
+    sinon ignorées.
+    """
+    out: List[str] = []
+    for t in raw_themes or []:
+        canonical = LEGACY_TO_DOMAIN.get(t, t)
+        if canonical not in CANONICAL_DOMAINS:
+            # Tolère seulement les domaines canoniques connus
+            continue
+        if canonical not in out:
+            out.append(canonical)
+    return out
+
+
 def _normalize(s: str) -> str:
     """lowercase + strip accents (light)"""
     if not s:
@@ -154,16 +196,20 @@ def classify_piece(piece: dict) -> dict:
     """
     Renvoie {tags_thematiques, sujets_concernes, nature_document}
     déduits des données déjà présentes (sans appel IA).
+    Les thèmes sont normalisés vers les 5 domaines juridiques
+    (PÉNAL, CIVIL_FAMILLE, IMMOBILIER_LOGEMENT, TRAVAIL, ADMINISTRATIF).
     """
     text = _build_haystack(piece)
 
-    themes: List[str] = []
+    raw_themes: List[str] = []
     for theme, kws in THEME_KEYWORDS.items():
         for kw in kws:
             if _normalize(kw) in text:
-                if theme not in themes:
-                    themes.append(theme)
+                if theme not in raw_themes:
+                    raw_themes.append(theme)
                 break
+
+    themes = normalize_themes(raw_themes)
 
     subjects: List[str] = ["utilisateur"]  # par défaut, le user est concerné
     for subj, kws in SUBJECT_KEYWORDS.items():

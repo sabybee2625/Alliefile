@@ -2141,6 +2141,12 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
             response_text = response_text[:-3]
         
         proposal = json.loads(response_text.strip())
+        # Normalise tags_thematiques vers les 5 domaines juridiques canoniques.
+        try:
+            from piece_classifier import normalize_themes
+            proposal["tags_thematiques"] = normalize_themes(proposal.get("tags_thematiques") or [])
+        except Exception:
+            pass
         return proposal
         
     except json.JSONDecodeError as e:
@@ -2152,62 +2158,37 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
 
 # ===================== CHRONOLOGY & EXPORTS =====================
 
-# Suggestions d'aide à la constitution selon les thèmes détectés (neutres, génériques)
+# Suggestions d'aide à la constitution selon les 5 domaines juridiques canoniques.
 THEME_HINTS = {
-    "famille": [
-        "Acte de mariage / livret de famille",
-        "Jugements ou ordonnances antérieurs",
-        "Échanges écrits avec la partie adverse (SMS, emails, courriers)",
-    ],
-    "travail": [
-        "Contrat de travail et avenants",
-        "Bulletins de salaire des 12 derniers mois",
-        "Échanges écrits avec l'employeur",
-    ],
-    "sante": [
-        "Certificats médicaux datés",
-        "Comptes rendus d'hospitalisation ou d'examens",
-        "Ordonnances et prescriptions",
-    ],
-    "violence": [
+    "PÉNAL": [
         "Plaintes ou mains courantes déposées",
         "Certificats médicaux constatant des lésions",
-        "Témoignages écrits de proches ou voisins",
+        "Captures d'écran horodatées (SMS, emails, réseaux sociaux)",
+        "Témoignages écrits de proches, voisins ou témoins directs",
     ],
-    "harcelement": [
-        "Captures d'écran horodatées des échanges",
-        "Traces numériques (SMS, emails, réseaux sociaux)",
-        "Témoignages écrits de témoins directs",
+    "CIVIL_FAMILLE": [
+        "Acte de mariage / livret de famille",
+        "Jugements ou ordonnances antérieurs (JAF, divorce, garde)",
+        "Échanges écrits avec la partie adverse (SMS, emails, courriers)",
+        "Acte de décès, testament et inventaire (succession)",
     ],
-    "logement": [
+    "IMMOBILIER_LOGEMENT": [
         "Bail de location et annexes",
         "Quittances de loyer / appels de charges",
+        "État des lieux d'entrée et de sortie",
         "Courriers recommandés avec accusé de réception",
     ],
-    "finances": [
-        "Relevés bancaires des périodes concernées",
-        "Factures et justificatifs de paiement",
-        "Contrats et conditions générales",
+    "TRAVAIL": [
+        "Contrat de travail et avenants",
+        "Bulletins de salaire des 12 derniers mois",
+        "Échanges écrits avec l'employeur (emails, courriers)",
+        "Lettre de licenciement / rupture conventionnelle",
     ],
-    "administratif": [
+    "ADMINISTRATIF": [
         "Décisions administratives (notifications, refus)",
-        "Courriers recommandés avec accusé de réception",
         "Justificatifs de démarches effectuées",
-    ],
-    "scolaire": [
-        "Bulletins scolaires de la période concernée",
-        "Échanges avec l'établissement (emails, courriers)",
-        "Rapports éventuels (équipe éducative, psychologue)",
-    ],
-    "succession": [
-        "Acte de décès et livret de famille",
-        "Testament éventuel",
-        "Inventaire et évaluations des biens",
-    ],
-    "consommation": [
-        "Contrat ou bon de commande",
-        "Factures et preuves de paiement",
-        "Échanges écrits avec le professionnel",
+        "Relevés bancaires et factures pour les volets financiers",
+        "Bulletins ou rapports scolaires si volet enfants",
     ],
 }
 

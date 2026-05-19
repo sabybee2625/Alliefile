@@ -1301,6 +1301,35 @@ const DossierView = () => {
                               <Badge variant="outline" className={`text-xs ${piece.status === 'pret' ? 'status-pret' : 'status-a_verifier'}`}>
                                 {statusLabels[piece.status]}
                               </Badge>
+                              {(() => {
+                                const src = (piece.validated_data?.source_qualifiee || piece.ai_proposal?.source_qualifiee || '').toString();
+                                if (!src) return null;
+                                const low = src.toLowerCase();
+                                const isPro = src === 'PRO' || low.includes('médic') || low.includes('judici') || low.includes('juridique');
+                                const isPrive =
+                                  src === 'PRIVÉ' || low === 'prive' ||
+                                  low.includes('attestation') || low.includes('voisin') ||
+                                  low.includes('famille') || low.includes('témoin');
+                                if (isPro) {
+                                  return (
+                                    <Badge variant="outline" className="text-xs bg-slate-800 text-white border-slate-800" data-testid={`source-badge-${piece.id}`}>
+                                      PRO
+                                    </Badge>
+                                  );
+                                }
+                                if (isPrive) {
+                                  return (
+                                    <Badge variant="outline" className="text-xs bg-white text-slate-700 border-slate-300" data-testid={`source-badge-${piece.id}`}>
+                                      PRIVÉ
+                                    </Badge>
+                                  );
+                                }
+                                return (
+                                  <Badge variant="outline" className="text-xs bg-slate-100 text-slate-600 border-slate-200" data-testid={`source-badge-${piece.id}`}>
+                                    {src.length > 12 ? `${src.slice(0, 12)}…` : src}
+                                  </Badge>
+                                );
+                              })()}
                               {piece.analysis_status && piece.analysis_status !== 'complete' && (
                                 <Badge variant="outline" className={`text-xs ${analysisStatusColors[piece.analysis_status]}`}>
                                   {piece.analysis_status === 'analyzing' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}

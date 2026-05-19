@@ -39,9 +39,27 @@ const SUBJECT_LABELS = {
 
 const SUBJECT_STYLE = { bg: '#F1F5F9', fg: '#334155' };
 
-export function getThemeStyle(key) {
-  return THEME_STYLES[key] || { bg: '#F1F5F9', fg: '#475569', label: key };
-}
+export const getThemeStyle = (key) => {
+  const styles = {
+    'PÉNAL': { bg:'#FCE7E5', fg:'#9B3A3A', dot:'#9B3A3A', label:'Pénal / Violence' },
+    'CIVIL_FAMILLE': { bg:'#E8EDF8', fg:'#334E8A', dot:'#334E8A', label:'Famille' },
+    'IMMOBILIER_LOGEMENT': { bg:'#FEF3C7', fg:'#D97706', dot:'#D97706', label:'Logement' },
+    'TRAVAIL': { bg:'#DCE9DC', fg:'#3F6E47', dot:'#3F6E47', label:'Travail' },
+    'ADMINISTRATIF': { bg:'#E2E8F0', fg:'#64748B', dot:'#64748B', label:'Administratif' },
+    'violence': { bg:'#FCE7E5', fg:'#9B3A3A', dot:'#9B3A3A', label:'Violence' },
+    'harcelement': { bg:'#FCE7E5', fg:'#9B3A3A', dot:'#9B3A3A', label:'Harcèlement' },
+    'famille': { bg:'#E8EDF8', fg:'#334E8A', dot:'#334E8A', label:'Famille' },
+    'sante': { bg:'#DCE9DC', fg:'#3F6E47', dot:'#3F6E47', label:'Santé' },
+    'logement': { bg:'#FEF3C7', fg:'#D97706', dot:'#D97706', label:'Logement' },
+    'travail': { bg:'#DCE9DC', fg:'#3F6E47', dot:'#3F6E47', label:'Travail' },
+    'administratif': { bg:'#E2E8F0', fg:'#64748B', dot:'#64748B', label:'Administratif' },
+    'financier': { bg:'#E0F2FE', fg:'#0369A1', dot:'#0369A1', label:'Financier' },
+    'consommation': { bg:'#EDE9FE', fg:'#7C3AED', dot:'#7C3AED', label:'Consommation' },
+    'scolaire': { bg:'#FEF9C3', fg:'#854D0E', dot:'#854D0E', label:'Scolaire' },
+    'succession': { bg:'#F3E8FF', fg:'#7C3AED', dot:'#7C3AED', label:'Succession' },
+  };
+  return styles[key] || { bg:'#F1F5F9', fg:'#64748B', dot:'#64748B', label: key };
+};
 
 export function getSubjectLabel(key) {
   return SUBJECT_LABELS[key] || key;

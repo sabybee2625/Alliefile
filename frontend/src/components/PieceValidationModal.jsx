@@ -22,9 +22,10 @@ import {
 import { piecesApi } from '../lib/api';
 import { pieceTypeLabels, confidenceLabels, formatDate } from '../lib/utils';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, Eye, Quote, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Eye, Quote, ShieldCheck, ShieldAlert, ShieldQuestion, Plus, X } from 'lucide-react';
 import { DateInput } from './DateInput';
 import { FilePreviewModal } from './FilePreviewModal';
+import { getThemeStyle } from './PieceThemeBadges';
 
 const pieceTypes = [
   'plainte',
@@ -74,7 +75,10 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
     resume_ou: proposal.resume_ou || '',
     resume_element_cle: proposal.resume_element_cle || '',
     mots_cles: proposal.mots_cles || [],
+    tags_thematiques: proposal.tags_thematiques || [],
   });
+
+  const [themeSelect, setThemeSelect] = useState('PÉNAL');
   
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -259,6 +263,74 @@ export const PieceValidationModal = ({ piece, onClose, onValidated }) => {
                   data-testid="resume-element-cle-input"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Thèmes (catégories juridiques) */}
+          <div className="space-y-2" data-testid="themes-section">
+            <Label className="text-xs uppercase tracking-wide text-slate-500">Thèmes</Label>
+            <div className="flex flex-wrap gap-2 min-h-[28px]">
+              {formData.tags_thematiques.length === 0 && (
+                <span className="text-xs text-slate-400 italic">Aucun thème — utilisez le sélecteur ci-dessous.</span>
+              )}
+              {formData.tags_thematiques.map((tag) => {
+                const s = getThemeStyle(tag);
+                return (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-[11px] font-medium"
+                    style={{ backgroundColor: s.bg, color: s.fg }}
+                    data-testid={`theme-badge-${tag}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.dot }} />
+                    {s.label || tag}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          tags_thematiques: prev.tags_thematiques.filter((t) => t !== tag),
+                        }))
+                      }
+                      className="ml-1 hover:bg-black/10 rounded-sm p-0.5"
+                      aria-label={`Retirer ${tag}`}
+                      data-testid={`theme-remove-${tag}`}
+                    >
+                      <X className="w-3 h-3" style={{ color: s.fg }} />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <Select value={themeSelect} onValueChange={setThemeSelect}>
+                <SelectTrigger className="rounded-sm flex-1" data-testid="theme-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PÉNAL">Pénal / Violence</SelectItem>
+                  <SelectItem value="CIVIL_FAMILLE">Famille</SelectItem>
+                  <SelectItem value="IMMOBILIER_LOGEMENT">Logement</SelectItem>
+                  <SelectItem value="TRAVAIL">Travail</SelectItem>
+                  <SelectItem value="ADMINISTRATIF">Administratif</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setFormData((prev) =>
+                    prev.tags_thematiques.includes(themeSelect)
+                      ? prev
+                      : { ...prev, tags_thematiques: [...prev.tags_thematiques, themeSelect] }
+                  )
+                }
+                className="rounded-sm"
+                data-testid="theme-add-btn"
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
             </div>
           </div>
 

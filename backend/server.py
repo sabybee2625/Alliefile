@@ -159,11 +159,14 @@ class DossierResponse(BaseModel):
     piece_count: int = 0
 
 class AIProposal(BaseModel):
-    type_piece: str
-    type_confidence: str
+    # Champs rendus optionnels pour rester compatibles avec
+    # les propositions partielles écrites par le classifieur déterministe
+    # (qui n'enrichit que tags_thematiques/sujets_concernes/nature_document).
+    type_piece: Optional[str] = None
+    type_confidence: Optional[str] = None
     date_document: Optional[str] = None
     date_confidence: str = "faible"
-    titre: str
+    titre: Optional[str] = None
     titre_confidence: str = "moyen"
     resume_qui: Optional[str] = None
     resume_quoi: Optional[str] = None

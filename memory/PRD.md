@@ -146,3 +146,26 @@ Plateforme SaaS juridique pour la constitution, la structuration, le partage et 
 ## Testing
 - **Pytest backend** : `cd /app/backend && python -m pytest tests/ -v` — 7/7 (smoke)
 - **Testing agent iteration_8** : 20/20 backend + 100% frontend (admin + rebrand + webhooks)
+
+---
+
+## Hotfix 2026-05-19 — Erreur "Dossier non trouvé" (prod alliefile.com + preview)
+
+### Symptômes
+- Liste des dossiers affichée OK, mais à l'ouverture d'un dossier : toast "Erreur lors du chargement" + "Dossier non trouvé"
+- Logs backend : `GET /api/dossiers/{id}/pieces` → 500 Internal Server Error
+- Stack: `pydantic_core.ValidationError: 3 validation errors for PieceResponse — ai_proposal.type_piece / type_confidence / titre Field required`
+- Cause : le classifieur déterministe (`piece_classifier.py` via `POST /dossiers/{id}/reclassify`) écrivait des `ai_proposal` partiels (`{tags_thematiques, sujets_concernes, nature_document}`) sur des pièces sans `validated_data` ni `ai_proposal` existant, donc sans `type_piece`/`titre`/`type_confidence`.
+
+### Fix appliqué (backend/server.py)
+- `AIProposal.type_piece`, `type_confidence`, `titre` rendus **Optional** (rétro-compatible avec les ai_proposal partiels écrits par le classifieur)
+- Frontend non touché : il gère déjà `null` pour ces champs
+
+### Fix .gitignore (bloqueur Cloud Build prod)
+- `.gitignore` corrompu (15 duplications des règles `*.env` / `.env*`) nettoyé
+- Les fichiers `backend/.env` et `frontend/.env` ne sont plus ignorés → le Cloud Build prochain devrait passer
+
+### Tests
+- Reproduction du bug avec pièce contenant `ai_proposal` partiel → 500 avant fix, 200 après fix ✅
+- pytest tests/test_smoke.py → 7/7 PASSED (test plan "Pro" → "Sérénité" rafraîchi)
+

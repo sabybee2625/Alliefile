@@ -31,7 +31,7 @@ def test_get_plans_returns_essentiel_and_pro(base_url):
     plans = r.json()["plans"]
     assert plans["standard"]["name"] == "Essentiel"
     assert plans["standard"]["price_monthly"] == 14.90
-    assert plans["premium"]["name"] == "Pro"
+    assert plans["premium"]["name"] == "Sérénité"
     assert plans["premium"]["price_monthly"] == 39.90
 
 

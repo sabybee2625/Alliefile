@@ -41,11 +41,11 @@ const SUBJECT_STYLE = { bg: '#F1F5F9', fg: '#334155' };
 
 export const getThemeStyle = (key) => {
   const styles = {
-    'PÉNAL':               { bg:'#FCE7E5', fg:'#9B3A3A', dot:'#9B3A3A', label:'Pénal / Violence' },
-    'CIVIL_FAMILLE':       { bg:'#E8EDF8', fg:'#334E8A', dot:'#334E8A', label:'Famille' },
-    'IMMOBILIER_LOGEMENT': { bg:'#FEF3C7', fg:'#D97706', dot:'#D97706', label:'Logement' },
-    'TRAVAIL':             { bg:'#DCE9DC', fg:'#3F6E47', dot:'#3F6E47', label:'Travail' },
-    'ADMINISTRATIF':       { bg:'#E2E8F0', fg:'#64748B', dot:'#64748B', label:'Administratif' },
+    'PÉNAL':    { bg:'#FCE7E5', fg:'#9B3A3A', dot:'#9B3A3A', label:'Pénal' },
+    'FAMILLE':  { bg:'#E8EDF8', fg:'#334E8A', dot:'#334E8A', label:'Famille' },
+    'LOGEMENT': { bg:'#FEF3C7', fg:'#D97706', dot:'#D97706', label:'Logement' },
+    'TRAVAIL':  { bg:'#DCE9DC', fg:'#3F6E47', dot:'#3F6E47', label:'Travail' },
+    'CIVIL':    { bg:'#E2E8F0', fg:'#64748B', dot:'#64748B', label:'Civil' },
   };
   return styles[key] || { bg:'#F1F5F9', fg:'#64748B', dot:'#64748B', label: key };
 };

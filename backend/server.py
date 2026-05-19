@@ -2221,39 +2221,41 @@ async def reclassify_dossier_pieces(
     user: dict = Depends(get_current_user),
 ):
     """
-    Classification rétroactive (par mots-clés, SANS appel IA) des pièces existantes
-    pour ajouter tags_thematiques / sujets_concernes / nature_document.
-
-    Par défaut, ne met à jour QUE les pièces sans classification.
-    `force=true` ré-applique sur toutes les pièces.
+    Classification rétroactive (par mots-clés, SANS appel IA) des pièces existantes.
+    Toutes les pièces sont traitées : on tente d'abord de normaliser les
+    tags existants vers les 5 domaines juridiques canoniques ; si rien ne reste,
+    on relance la détection par mots-clés (classify_piece).
     """
+    from piece_classifier import normalize_themes  # local import to avoid circulars
+
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
 
     pieces = await db.pieces.find({"dossier_id": dossier_id}, {"_id": 0}).to_list(2000)
     updated = 0
-    skipped = 0
     for p in pieces:
         v = p.get("validated_data") or {}
         a = p.get("ai_proposal") or {}
-        already_classified = bool(
-            v.get("tags_thematiques") or a.get("tags_thematiques")
-        )
-        if already_classified and not force:
-            skipped += 1
-            continue
+        existing = v.get("tags_thematiques") or a.get("tags_thematiques") or []
+        normalized = normalize_themes(existing)
 
-        cls = classify_piece(p)
+        if not normalized:
+            # Fallback : détection par mots-clés (classify_piece applique aussi normalize_themes)
+            cls = classify_piece(p)
+            normalized = cls["tags_thematiques"]
+            subjects = cls["sujets_concernes"]
+            nature = cls["nature_document"]
+        else:
+            subjects = v.get("sujets_concernes") or a.get("sujets_concernes") or ["utilisateur"]
+            nature = v.get("nature_document") or a.get("nature_document")
 
-        # Mise à jour: on enrichit validated_data (autoritaire) si elle existe,
-        # sinon ai_proposal.
         target_field = "validated_data" if v else "ai_proposal"
-        target_doc = v if v else (a or {})
-        target_doc["tags_thematiques"] = cls["tags_thematiques"]
-        target_doc["sujets_concernes"] = cls["sujets_concernes"]
-        if cls["nature_document"] and not target_doc.get("nature_document"):
-            target_doc["nature_document"] = cls["nature_document"]
+        target_doc = dict(v) if v else dict(a or {})
+        target_doc["tags_thematiques"] = normalized
+        target_doc["sujets_concernes"] = subjects
+        if nature and not target_doc.get("nature_document"):
+            target_doc["nature_document"] = nature
 
         await db.pieces.update_one(
             {"id": p["id"]},
@@ -2264,7 +2266,7 @@ async def reclassify_dossier_pieces(
         )
         updated += 1
 
-    return {"ok": True, "updated": updated, "skipped": skipped, "total": len(pieces)}
+    return {"ok": True, "updated": updated, "skipped": 0, "total": len(pieces)}
 
 
 @api_router.get("/dossiers/{dossier_id}/chronology")

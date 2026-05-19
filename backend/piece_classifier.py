@@ -116,46 +116,66 @@ TYPE_TO_NATURE = {
 }
 
 
-# Mapping des anciennes clés (issues du dictionnaire THEME_KEYWORDS ou des
-# anciennes sorties IA) vers les 5 domaines juridiques canoniques utilisés
-# dans le frontend (PÉNAL, CIVIL_FAMILLE, IMMOBILIER_LOGEMENT, TRAVAIL, ADMINISTRATIF).
-LEGACY_TO_DOMAIN = {
-    "violence":      "PÉNAL",
-    "harcelement":   "PÉNAL",
-    "sante":         "PÉNAL",
-    "famille":       "CIVIL_FAMILLE",
-    "succession":    "CIVIL_FAMILLE",
-    "consommation":  "CIVIL_FAMILLE",
-    "logement":      "IMMOBILIER_LOGEMENT",
-    "travail":       "TRAVAIL",
-    "administratif": "ADMINISTRATIF",
-    "financier":     "ADMINISTRATIF",
-    "finances":      "ADMINISTRATIF",
-    "scolaire":      "ADMINISTRATIF",
+# Taxonomie canonique à 3 niveaux : domaine → sous-catégorie → mots-clés.
+# (Référence authoritative pour les 5 domaines juridiques.)
+TAXONOMY = {
+    'PÉNAL': {
+        'Violence conjugale': ['physique', 'psychologique', 'sexuelle'],
+        'Harcèlement': ['moral', 'sexuel', 'cyber'],
+        'Menaces': ['intimidation'],
+        'Infractions biens': ['vol', 'escroquerie', 'dégradation'],
+    },
+    'FAMILLE': {
+        'Divorce': ['séparation'],
+        'Garde': ['autorité parentale'],
+        'Pension alimentaire': [],
+        'Violence intrafamiliale': [],
+    },
+    'LOGEMENT': {
+        'Litige locatif': ['loyers', 'charges', 'dépôt de garantie'],
+        'Expulsion': [],
+        'Malfaçons': ['travaux'],
+        'Copropriété': ['voisinage'],
+    },
+    'TRAVAIL': {
+        'Licenciement': ['abusif'],
+        'Harcèlement professionnel': [],
+        'Discrimination': [],
+        'Salaires': ['heures supplémentaires'],
+    },
+    'CIVIL': {
+        'Dettes': ['créances'],
+        'Responsabilité civile': [],
+        'Litiges contractuels': [],
+    },
 }
 
-# Domaines juridiques canoniques (whitelist).
-CANONICAL_DOMAINS = {
-    "PÉNAL", "CIVIL_FAMILLE", "IMMOBILIER_LOGEMENT", "TRAVAIL", "ADMINISTRATIF",
+# Mapping des anciennes clés (ou clés intermédiaires d'une migration antérieure)
+# vers les 5 domaines canoniques.
+LEGACY_MAP = {
+    'violence': 'PÉNAL', 'harcelement': 'PÉNAL', 'sante': 'PÉNAL',
+    'famille': 'FAMILLE', 'succession': 'CIVIL', 'consommation': 'CIVIL',
+    'logement': 'LOGEMENT', 'travail': 'TRAVAIL',
+    'administratif': 'CIVIL', 'financier': 'CIVIL', 'finances': 'CIVIL',
+    'scolaire': 'CIVIL', 'CIVIL_FAMILLE': 'FAMILLE',
+    'IMMOBILIER_LOGEMENT': 'LOGEMENT', 'ADMINISTRATIF': 'CIVIL',
 }
 
+VALID_DOMAINS = set(TAXONOMY.keys())
 
-def normalize_themes(raw_themes) -> List[str]:
+
+def normalize_themes(tags) -> List[str]:
     """
     Convertit n'importe quelle liste de thèmes (anciennes clés ou nouvelles)
     en liste dédupliquée des 5 domaines juridiques canoniques, ordre stable.
-    Les valeurs non reconnues sont conservées telles quelles si déjà canoniques,
-    sinon ignorées.
+    Les valeurs non reconnues sont ignorées.
     """
-    out: List[str] = []
-    for t in raw_themes or []:
-        canonical = LEGACY_TO_DOMAIN.get(t, t)
-        if canonical not in CANONICAL_DOMAINS:
-            # Tolère seulement les domaines canoniques connus
-            continue
-        if canonical not in out:
-            out.append(canonical)
-    return out
+    result: List[str] = []
+    for t in (tags or []):
+        mapped = LEGACY_MAP.get(t, t)
+        if mapped in VALID_DOMAINS and mapped not in result:
+            result.append(mapped)
+    return result
 
 
 def _normalize(s: str) -> str:

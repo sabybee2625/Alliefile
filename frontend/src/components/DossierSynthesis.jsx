@@ -98,19 +98,50 @@ export const DossierSynthesis = ({ dossierId, shareToken, synthesis: synthesisPr
           <div className="flex flex-wrap gap-1.5">
             {top.map((t) => {
               const s = getThemeStyle(t.key);
+              const ratio = (synthesis.source_by_domain || {})[t.key];
               return (
                 <span
                   key={t.key}
                   className="inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-[11px] font-medium"
                   style={{ backgroundColor: s.bg, color: s.fg }}
                   data-testid={`synthesis-theme-${t.key}`}
+                  title={ratio ? `${ratio.PRO || 0} PRO · ${ratio['PRIVÉ'] || 0} PRIVÉ` : undefined}
                 >
                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.dot }} />
                   {s.label || t.key}
                   <span className="opacity-70 ml-0.5">{t.count}</span>
+                  {ratio && ((ratio.PRO || 0) + (ratio['PRIVÉ'] || 0) > 0) && (
+                    <span
+                      className="ml-1 inline-flex items-center gap-0.5 text-[9px] font-semibold"
+                      style={{ opacity: 0.75 }}
+                    >
+                      <span>{ratio.PRO || 0}P</span>
+                      <span>·</span>
+                      <span>{ratio['PRIVÉ'] || 0}p</span>
+                    </span>
+                  )}
                 </span>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Sous-catégories */}
+      {Array.isArray(synthesis.sous_domaines) && synthesis.sous_domaines.length > 0 && !compact && (
+        <div className="mb-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Sous-catégories</div>
+          <div className="flex flex-wrap gap-1.5">
+            {synthesis.sous_domaines.slice(0, 8).map((sd) => (
+              <span
+                key={sd.key}
+                className="inline-flex items-center rounded-sm px-2 py-0.5 text-[11px] font-medium bg-white text-slate-700 border border-slate-300"
+                data-testid={`synthesis-subdomain-${sd.key}`}
+              >
+                {sd.key}
+                <span className="opacity-60 ml-1">{sd.count}</span>
+              </span>
+            ))}
           </div>
         </div>
       )}

@@ -74,7 +74,7 @@ import { AssistantView } from '../components/AssistantView';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { PieceFilterBar, usePieceFilters } from '../components/PieceFilterBar';
-import { PieceThemeBadges } from '../components/PieceThemeBadges';
+import { PieceThemeBadges, PieceClassificationBadges } from '../components/PieceThemeBadges';
 import { DossierSynthesis } from '../components/DossierSynthesis';
 
 // Lit l'erreur d'un blob quand le serveur a renvoyé du JSON (cas 403 PLAN_LIMIT_EXCEEDED)
@@ -1053,8 +1053,10 @@ const DossierView = () => {
               pieces={pieces}
               activeThemes={pieceFilters.activeThemes}
               activeSubjects={pieceFilters.activeSubjects}
+              activeSubdomains={pieceFilters.activeSubdomains}
               onToggleTheme={pieceFilters.toggleTheme}
               onToggleSubject={pieceFilters.toggleSubject}
+              onToggleSubdomain={pieceFilters.toggleSubdomain}
               onClear={pieceFilters.clear}
             />
             <DossierSynthesis dossierId={id} onChanged={fetchData} />
@@ -1301,35 +1303,6 @@ const DossierView = () => {
                               <Badge variant="outline" className={`text-xs ${piece.status === 'pret' ? 'status-pret' : 'status-a_verifier'}`}>
                                 {statusLabels[piece.status]}
                               </Badge>
-                              {(() => {
-                                const src = (piece.validated_data?.source_qualifiee || piece.ai_proposal?.source_qualifiee || '').toString();
-                                if (!src) return null;
-                                const low = src.toLowerCase();
-                                const isPro = src === 'PRO' || low.includes('médic') || low.includes('judici') || low.includes('juridique');
-                                const isPrive =
-                                  src === 'PRIVÉ' || low === 'prive' ||
-                                  low.includes('attestation') || low.includes('voisin') ||
-                                  low.includes('famille') || low.includes('témoin');
-                                if (isPro) {
-                                  return (
-                                    <Badge variant="outline" className="text-xs bg-slate-800 text-white border-slate-800" data-testid={`source-badge-${piece.id}`}>
-                                      PRO
-                                    </Badge>
-                                  );
-                                }
-                                if (isPrive) {
-                                  return (
-                                    <Badge variant="outline" className="text-xs bg-white text-slate-700 border-slate-300" data-testid={`source-badge-${piece.id}`}>
-                                      PRIVÉ
-                                    </Badge>
-                                  );
-                                }
-                                return (
-                                  <Badge variant="outline" className="text-xs bg-slate-100 text-slate-600 border-slate-200" data-testid={`source-badge-${piece.id}`}>
-                                    {src.length > 12 ? `${src.slice(0, 12)}…` : src}
-                                  </Badge>
-                                );
-                              })()}
                               {piece.analysis_status && piece.analysis_status !== 'complete' && (
                                 <Badge variant="outline" className={`text-xs ${analysisStatusColors[piece.analysis_status]}`}>
                                   {piece.analysis_status === 'analyzing' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
@@ -1354,12 +1327,21 @@ const DossierView = () => {
                                 </Badge>
                               )}
                             </div>
-                            <PieceThemeBadges
-                              themes={piece.validated_data?.tags_thematiques?.length ? piece.validated_data.tags_thematiques : (piece.ai_proposal?.tags_thematiques || [])}
-                              subjects={piece.validated_data?.sujets_concernes?.length ? piece.validated_data.sujets_concernes : (piece.ai_proposal?.sujets_concernes || [])}
-                              size="xs"
-                            />
-                            <div className="flex items-center gap-4 text-sm text-slate-500">
+                            {(() => {
+                              const v = piece.validated_data || {};
+                              const a = piece.ai_proposal || {};
+                              const themes = v.tags_thematiques?.length ? v.tags_thematiques : (a.tags_thematiques || []);
+                              return (
+                                <PieceClassificationBadges
+                                  domaine={themes[0] || null}
+                                  sous_domaine={v.sous_domaine || a.sous_domaine || null}
+                                  type_specifique={v.type_specifique || a.type_specifique || null}
+                                  source={v.source_qualifiee || a.source_qualifiee || null}
+                                  subjects={v.sujets_concernes?.length ? v.sujets_concernes : (a.sujets_concernes || [])}
+                                  size="xs"
+                                />
+                              );
+                            })()}                            <div className="flex items-center gap-4 text-sm text-slate-500">
                               {(piece.validated_data?.type_piece || piece.ai_proposal?.type_piece) && (
                                 <span>{pieceTypeLabels[piece.validated_data?.type_piece || piece.ai_proposal?.type_piece]}</span>
                               )}

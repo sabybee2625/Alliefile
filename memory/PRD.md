@@ -169,3 +169,24 @@ Plateforme SaaS juridique pour la constitution, la structuration, le partage et 
 - Reproduction du bug avec pièce contenant `ai_proposal` partiel → 500 avant fix, 200 après fix ✅
 - pytest tests/test_smoke.py → 7/7 PASSED (test plan "Pro" → "Sérénité" rafraîchi)
 
+---
+
+## V3 Taxonomie 3 niveaux — 2026-05-19
+
+### Nouveaux champs sur chaque pièce (dans `validated_data` ou `ai_proposal`)
+- `tags_thematiques: List[str]` — 5 domaines canoniques (PÉNAL / FAMILLE / LOGEMENT / TRAVAIL / CIVIL)
+- `sous_domaine: str?` — ex: "Violence conjugale", "Litige locatif", "Licenciement"
+- `type_specifique: str?` — ex: "physique", "loyers", "abusif"
+- `source_qualifiee: 'PRO' | 'PRIVÉ' | null` — dérivée de nature_document
+
+### Backend
+- `piece_classifier.py` : `TAXONOMY` 3 niveaux, `SUBDOMAIN_KEYWORDS`, `TYPE_KEYWORDS`, `NATURE_TO_SOURCE`, fonctions `detect_subdomain()` + `derive_source_qualifiee()`
+- `server.py` : `AIProposal`/`PieceValidation` étendus, endpoint `/reclassify` saves les 3 nouveaux champs, `/synthesis` retourne `sous_domaines` + `source_by_domain`
+- L'endpoint `/reclassify` retraite **toutes** les pièces (plus de skip)
+
+### Frontend
+- `PieceThemeBadges.jsx` : nouveau composant `PieceClassificationBadges` (domaine + sous-domaine + source PRO/PRIVÉ + sujets)
+- `PieceFilterBar.jsx` : nouvelle rangée "Sous-catégories" filtrable, hook `usePieceFilters` étendu avec `activeSubdomains/toggleSubdomain`
+- `DossierSynthesis.jsx` : section "Sous-catégories" + ratio P/p sur chaque thème principal
+- `DossierView.jsx` + `SharedDossier.jsx` : migration vers `PieceClassificationBadges`
+

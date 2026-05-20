@@ -19,31 +19,37 @@ export const PieceFilterBar = ({
   pieces = [],
   activeThemes,
   activeSubjects,
+  activeSubdomains,
   onToggleTheme,
   onToggleSubject,
+  onToggleSubdomain,
   onClear,
   sticky = true,
 }) => {
-  const { themes, subjects } = useMemo(() => {
+  const { themes, subjects, subdomains } = useMemo(() => {
     const themeCounts = new Map();
     const subjectCounts = new Map();
+    const subdomainCounts = new Map();
     for (const p of pieces) {
       const v = p.validated_data || {};
       const a = p.ai_proposal || {};
       const ths = (v.tags_thematiques?.length ? v.tags_thematiques : a.tags_thematiques) || [];
       const subs = (v.sujets_concernes?.length ? v.sujets_concernes : a.sujets_concernes) || [];
+      const sd = v.sous_domaine || a.sous_domaine;
       for (const t of ths) themeCounts.set(t, (themeCounts.get(t) || 0) + 1);
       for (const s of subs) subjectCounts.set(s, (subjectCounts.get(s) || 0) + 1);
+      if (sd) subdomainCounts.set(sd, (subdomainCounts.get(sd) || 0) + 1);
     }
     return {
       themes: [...themeCounts.entries()].sort((a, b) => b[1] - a[1]),
       subjects: [...subjectCounts.entries()].sort((a, b) => b[1] - a[1]),
+      subdomains: [...subdomainCounts.entries()].sort((a, b) => b[1] - a[1]),
     };
   }, [pieces]);
 
-  if (!themes.length && !subjects.length) return null;
+  if (!themes.length && !subjects.length && !subdomains.length) return null;
 
-  const hasActive = (activeThemes?.size || 0) + (activeSubjects?.size || 0) > 0;
+  const hasActive = (activeThemes?.size || 0) + (activeSubjects?.size || 0) + (activeSubdomains?.size || 0) > 0;
 
   return (
     <div
@@ -109,6 +115,33 @@ export const PieceFilterBar = ({
         </div>
       )}
 
+      {subdomains.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Sous-catégories</div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:thin]" data-testid="filter-row-subdomains">
+            {subdomains.map(([key, count]) => {
+              const active = activeSubdomains?.has(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onToggleSubdomain?.(key)}
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium border transition-colors ${
+                    active
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                  data-testid={`filter-subdomain-${key}`}
+                >
+                  {key}
+                  <span className={`text-[10px] ${active ? 'text-slate-300' : 'text-slate-400'}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {hasActive && (
         <div className="mt-2 flex justify-end">
           <button
@@ -132,6 +165,7 @@ export const PieceFilterBar = ({
 export function usePieceFilters() {
   const [activeThemes, setActiveThemes] = React.useState(() => new Set());
   const [activeSubjects, setActiveSubjects] = React.useState(() => new Set());
+  const [activeSubdomains, setActiveSubdomains] = React.useState(() => new Set());
 
   const toggleTheme = (t) => setActiveThemes((prev) => {
     const next = new Set(prev);
@@ -143,25 +177,36 @@ export function usePieceFilters() {
     next.has(s) ? next.delete(s) : next.add(s);
     return next;
   });
-  const clear = () => { setActiveThemes(new Set()); setActiveSubjects(new Set()); };
+  const toggleSubdomain = (sd) => setActiveSubdomains((prev) => {
+    const next = new Set(prev);
+    next.has(sd) ? next.delete(sd) : next.add(sd);
+    return next;
+  });
+  const clear = () => {
+    setActiveThemes(new Set());
+    setActiveSubjects(new Set());
+    setActiveSubdomains(new Set());
+  };
 
   /**
-   * Filtre une liste de pièces : ET entre groupes (Sujets ET Thèmes), OU à l'intérieur de chaque groupe.
+   * Filtre une liste de pièces : ET entre groupes (Sujets ET Thèmes ET Sous-catégories), OU à l'intérieur de chaque groupe.
    */
   const applyTo = (pieces) => {
-    if (!activeThemes.size && !activeSubjects.size) return pieces;
+    if (!activeThemes.size && !activeSubjects.size && !activeSubdomains.size) return pieces;
     return pieces.filter((p) => {
       const v = p.validated_data || {};
       const a = p.ai_proposal || {};
       const ths = new Set((v.tags_thematiques?.length ? v.tags_thematiques : a.tags_thematiques) || []);
       const subs = new Set((v.sujets_concernes?.length ? v.sujets_concernes : a.sujets_concernes) || []);
+      const sd = v.sous_domaine || a.sous_domaine;
       const themeOk = !activeThemes.size || [...activeThemes].some((t) => ths.has(t));
       const subjectOk = !activeSubjects.size || [...activeSubjects].some((s) => subs.has(s));
-      return themeOk && subjectOk;
+      const subdomainOk = !activeSubdomains.size || (sd && activeSubdomains.has(sd));
+      return themeOk && subjectOk && subdomainOk;
     });
   };
 
-  return { activeThemes, activeSubjects, toggleTheme, toggleSubject, clear, applyTo };
+  return { activeThemes, activeSubjects, activeSubdomains, toggleTheme, toggleSubject, toggleSubdomain, clear, applyTo };
 }
 
 export default PieceFilterBar;

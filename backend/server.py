@@ -178,6 +178,10 @@ class AIProposal(BaseModel):
     tags_thematiques: List[str] = []   # ex: famille, travail, sante, finances, logement, violence, harcelement, administratif
     sujets_concernes: List[str] = []   # ex: utilisateur, conjoint, enfant, employeur, bailleur, tiers, administration
     nature_document: Optional[str] = None  # officiel | prive | temoignage | medical | financier | autre
+    # V3 — taxonomie 3 niveaux
+    sous_domaine: Optional[str] = None      # ex: "Violence conjugale", "Litige locatif"
+    type_specifique: Optional[str] = None   # ex: "psychologique", "loyers"
+    source_qualifiee: Optional[str] = None  # "PRO" | "PRIVÉ" | None
 
 class PieceValidation(BaseModel):
     type_piece: str
@@ -191,6 +195,9 @@ class PieceValidation(BaseModel):
     tags_thematiques: List[str] = []
     sujets_concernes: List[str] = []
     nature_document: Optional[str] = None
+    sous_domaine: Optional[str] = None
+    type_specifique: Optional[str] = None
+    source_qualifiee: Optional[str] = None
 
 class PieceResponse(BaseModel):
     id: str
@@ -2194,13 +2201,16 @@ THEME_HINTS = {
 
 
 def _piece_classification(piece: dict) -> dict:
-    """Récupère tags/sujets/nature depuis validated_data en priorité, sinon ai_proposal."""
+    """Récupère tags/sujets/nature/sous-domaine/source depuis validated_data en priorité, sinon ai_proposal."""
     v = piece.get("validated_data") or {}
     a = piece.get("ai_proposal") or {}
     return {
         "tags_thematiques": v.get("tags_thematiques") or a.get("tags_thematiques") or [],
         "sujets_concernes": v.get("sujets_concernes") or a.get("sujets_concernes") or [],
         "nature_document": v.get("nature_document") or a.get("nature_document"),
+        "sous_domaine": v.get("sous_domaine") or a.get("sous_domaine"),
+        "type_specifique": v.get("type_specifique") or a.get("type_specifique"),
+        "source_qualifiee": v.get("source_qualifiee") or a.get("source_qualifiee"),
     }
 
 
@@ -2226,7 +2236,7 @@ async def reclassify_dossier_pieces(
     tags existants vers les 5 domaines juridiques canoniques ; si rien ne reste,
     on relance la détection par mots-clés (classify_piece).
     """
-    from piece_classifier import normalize_themes  # local import to avoid circulars
+    from piece_classifier import normalize_themes, detect_subdomain, derive_source_qualifiee, _build_haystack  # noqa: PLC0415
 
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
     if not dossier:
@@ -2246,14 +2256,29 @@ async def reclassify_dossier_pieces(
             normalized = cls["tags_thematiques"]
             subjects = cls["sujets_concernes"]
             nature = cls["nature_document"]
+            sous_domaine = cls["sous_domaine"]
+            type_specifique = cls["type_specifique"]
+            source_qualifiee = cls["source_qualifiee"]
         else:
             subjects = v.get("sujets_concernes") or a.get("sujets_concernes") or ["utilisateur"]
             nature = v.get("nature_document") or a.get("nature_document")
+            if not nature:
+                # Dérive depuis type_piece quand non stockée
+                from piece_classifier import TYPE_TO_NATURE  # noqa: PLC0415
+                type_piece = v.get("type_piece") or a.get("type_piece") or ""
+                nature = TYPE_TO_NATURE.get(type_piece)
+            # Toujours recalculer sous-domaine + type à partir du texte (texte stable)
+            primary = normalized[0] if normalized else None
+            sous_domaine, type_specifique = detect_subdomain(primary, _build_haystack(p))
+            source_qualifiee = derive_source_qualifiee(nature)
 
         target_field = "validated_data" if v else "ai_proposal"
         target_doc = dict(v) if v else dict(a or {})
         target_doc["tags_thematiques"] = normalized
         target_doc["sujets_concernes"] = subjects
+        target_doc["sous_domaine"] = sous_domaine
+        target_doc["type_specifique"] = type_specifique
+        target_doc["source_qualifiee"] = source_qualifiee
         if nature and not target_doc.get("nature_document"):
             target_doc["nature_document"] = nature
 
@@ -2882,6 +2907,8 @@ def _compute_synthesis(pieces: list) -> dict:
     theme_counts: dict = {}
     subject_counts: dict = {}
     nature_counts: dict = {}
+    subdomain_counts: dict = {}  # {sous_domaine: count}
+    source_by_domain: dict = {}  # {domaine: {"PRO": n, "PRIVÉ": n}}
     analyzed = 0
     for p in pieces:
         c = _piece_classification(p)
@@ -2894,9 +2921,17 @@ def _compute_synthesis(pieces: list) -> dict:
             subject_counts[s] = subject_counts.get(s, 0) + 1
         if c["nature_document"]:
             nature_counts[c["nature_document"]] = nature_counts.get(c["nature_document"], 0) + 1
+        if c["sous_domaine"]:
+            subdomain_counts[c["sous_domaine"]] = subdomain_counts.get(c["sous_domaine"], 0) + 1
+        # Ratio PRO/PRIVÉ par domaine
+        src = c["source_qualifiee"]
+        domain = c["tags_thematiques"][0] if c["tags_thematiques"] else None
+        if domain and src in ("PRO", "PRIVÉ"):
+            source_by_domain.setdefault(domain, {"PRO": 0, "PRIVÉ": 0})[src] += 1
     themes_sorted = [{"key": k, "count": v} for k, v in sorted(theme_counts.items(), key=lambda x: -x[1])]
     subjects_sorted = [{"key": k, "count": v} for k, v in sorted(subject_counts.items(), key=lambda x: -x[1])]
     natures_sorted = [{"key": k, "count": v} for k, v in sorted(nature_counts.items(), key=lambda x: -x[1])]
+    subdomains_sorted = [{"key": k, "count": v} for k, v in sorted(subdomain_counts.items(), key=lambda x: -x[1])]
     hints = []
     for entry in themes_sorted[:3]:
         for h in THEME_HINTS.get(entry["key"], []):
@@ -2905,8 +2940,10 @@ def _compute_synthesis(pieces: list) -> dict:
         "total_pieces": len(pieces),
         "pieces_classifiees": analyzed,
         "themes": themes_sorted,
+        "sous_domaines": subdomains_sorted,
         "sujets": subjects_sorted,
         "natures": natures_sorted,
+        "source_by_domain": source_by_domain,
         "hints": hints,
     }
 

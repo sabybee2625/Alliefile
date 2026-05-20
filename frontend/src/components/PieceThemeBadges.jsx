@@ -94,4 +94,98 @@ export const PieceThemeBadges = ({ themes = [], subjects = [], size = 'sm' }) =>
   );
 };
 
+/**
+ * Badge "source qualifiée" (PRO ou PRIVÉ) à afficher sur chaque carte.
+ */
+export const SourceBadge = ({ source }) => {
+  if (!source) return null;
+  if (source === 'PRO') {
+    return (
+      <span
+        className="inline-flex items-center rounded-sm px-2 py-0.5 text-[10px] font-semibold bg-slate-800 text-white"
+        data-testid="source-badge-pro"
+      >
+        PRO
+      </span>
+    );
+  }
+  if (source === 'PRIVÉ' || source === 'PRIVE' || source === 'prive') {
+    return (
+      <span
+        className="inline-flex items-center rounded-sm px-2 py-0.5 text-[10px] font-semibold bg-white text-slate-700 border border-slate-300"
+        data-testid="source-badge-prive"
+      >
+        PRIVÉ
+      </span>
+    );
+  }
+  return null;
+};
+
+/**
+ * Affiche la chaîne complète Domaine + Sous-domaine + Type spécifique
+ * (couleurs hiérarchisées : domaine vif, sous-domaine teinte plus claire).
+ *
+ * Props:
+ *  - domaine: string (clé canonique : PÉNAL/FAMILLE/LOGEMENT/TRAVAIL/CIVIL)
+ *  - sous_domaine: string libre (ex: "Violence conjugale")
+ *  - type_specifique: string libre optionnel (ex: "psychologique")
+ *  - source: 'PRO' | 'PRIVÉ' | null
+ *  - subjects: string[] (optionnel)
+ *  - size: 'sm' | 'xs'
+ */
+export const PieceClassificationBadges = ({
+  domaine,
+  sous_domaine,
+  type_specifique,
+  source,
+  subjects = [],
+  size = 'xs',
+}) => {
+  if (!domaine && !sous_domaine && !source && subjects.length === 0) return null;
+  const padding = size === 'xs' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-[11px]';
+  const ds = getThemeStyle(domaine);
+  // Teinte plus claire pour le sous-domaine : on garde bg mais alpha visuel via opacité
+  const subBg = ds.bg;
+  const subFg = ds.fg;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1" data-testid="piece-classification-badges">
+      {domaine && (
+        <span
+          className={`inline-flex items-center gap-1 rounded-sm font-semibold ${padding}`}
+          style={{ backgroundColor: ds.bg, color: ds.fg }}
+          data-testid={`piece-domaine-${domaine}`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ds.dot }} />
+          {ds.label || domaine}
+        </span>
+      )}
+      {sous_domaine && (
+        <span
+          className={`inline-flex items-center rounded-sm font-medium border ${padding}`}
+          style={{ backgroundColor: '#FFFFFF', color: subFg, borderColor: subBg }}
+          data-testid={`piece-sous-domaine`}
+          title={type_specifique ? `${sous_domaine} — ${type_specifique}` : sous_domaine}
+        >
+          {sous_domaine}
+          {type_specifique && (
+            <span className="opacity-60 ml-1">· {type_specifique}</span>
+          )}
+        </span>
+      )}
+      <SourceBadge source={source} />
+      {subjects.map((sj) => (
+        <span
+          key={`sj-${sj}`}
+          className={`inline-flex items-center rounded-sm font-medium ${padding}`}
+          style={{ backgroundColor: SUBJECT_STYLE.bg, color: SUBJECT_STYLE.fg }}
+          data-testid={`piece-subject-${sj}`}
+        >
+          {getSubjectLabel(sj)}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 export default PieceThemeBadges;

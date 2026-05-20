@@ -19,7 +19,7 @@ import {
   FileDown,
 } from 'lucide-react';
 import { PieceFilterBar, usePieceFilters } from '../components/PieceFilterBar';
-import { PieceThemeBadges } from '../components/PieceThemeBadges';
+import { PieceClassificationBadges } from '../components/PieceThemeBadges';
 import { DossierSynthesis } from '../components/DossierSynthesis';
 
 const SharedDossier = () => {
@@ -268,8 +268,10 @@ const SharedDossier = () => {
                   pieces={pieces}
                   activeThemes={sharedFilters.activeThemes}
                   activeSubjects={sharedFilters.activeSubjects}
+                  activeSubdomains={sharedFilters.activeSubdomains}
                   onToggleTheme={sharedFilters.toggleTheme}
                   onToggleSubject={sharedFilters.toggleSubject}
+                  onToggleSubdomain={sharedFilters.toggleSubdomain}
                   onClear={sharedFilters.clear}
                 />
                 <DossierSynthesis synthesis={synthesis} />
@@ -307,8 +309,11 @@ const SharedDossier = () => {
                                   {statusLabels[piece.status]}
                                 </Badge>
                               </div>
-                              <PieceThemeBadges
-                                themes={piece.validated_data?.tags_thematiques?.length ? piece.validated_data.tags_thematiques : (piece.ai_proposal?.tags_thematiques || [])}
+                              <PieceClassificationBadges
+                                domaine={(piece.validated_data?.tags_thematiques?.length ? piece.validated_data.tags_thematiques : (piece.ai_proposal?.tags_thematiques || []))[0] || null}
+                                sous_domaine={piece.validated_data?.sous_domaine || piece.ai_proposal?.sous_domaine || null}
+                                type_specifique={piece.validated_data?.type_specifique || piece.ai_proposal?.type_specifique || null}
+                                source={piece.validated_data?.source_qualifiee || piece.ai_proposal?.source_qualifiee || null}
                                 subjects={piece.validated_data?.sujets_concernes?.length ? piece.validated_data.sujets_concernes : (piece.ai_proposal?.sujets_concernes || [])}
                                 size="xs"
                               />

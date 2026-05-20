@@ -164,6 +164,134 @@ LEGACY_MAP = {
 VALID_DOMAINS = set(TAXONOMY.keys())
 
 
+# Mots-clés (lowercase, sans accents) pour identifier la SOUS-CATÉGORIE
+# au sein d'un domaine déjà détecté.
+SUBDOMAIN_KEYWORDS = {
+    'PÉNAL': {
+        'Violence conjugale': ['violence conjugale', 'coups', 'agression', 'blessure', 'lesions', 'itt', 'epoux', 'conjoint', 'compagne', 'compagnon', 'concubin', 'viol'],
+        'Harcèlement': ['harcelement', 'harceler', 'harcele', 'stalking', 'appels repetes', 'messages repetes', 'denigre', 'humiliation'],
+        'Menaces': ['menace', 'menaces de mort', 'intimidation'],
+        'Infractions biens': ['vol', 'cambriolage', 'escroquerie', 'fraude', 'degradation', 'destruction'],
+    },
+    'FAMILLE': {
+        'Divorce': ['divorce', 'separation', 'jaf', 'juge aux affaires familiales', 'rupture'],
+        'Garde': ['garde', 'autorite parentale', 'droit de visite', 'residence alternee'],
+        'Pension alimentaire': ['pension alimentaire', 'contribution', 'atb'],
+        'Violence intrafamiliale': ['violence intrafamiliale', 'maltraitance', 'enfant en danger'],
+    },
+    'LOGEMENT': {
+        'Litige locatif': ['bail', 'loyer', 'charges locatives', 'quittance', 'depot de garantie', 'locataire', 'bailleur', 'etat des lieux'],
+        'Expulsion': ['expulsion', 'commandement de payer', 'preavis'],
+        'Malfaçons': ['malfacon', 'travaux', 'desordre', 'vice cache'],
+        'Copropriété': ['copropriete', 'syndic', 'voisinage', 'voisin', 'nuisance'],
+    },
+    'TRAVAIL': {
+        'Licenciement': ['licenciement', 'rupture conventionnelle', 'demission', 'abusif', 'sans cause reelle'],
+        'Harcèlement professionnel': ['harcelement moral', 'harcelement professionnel', 'cse'],
+        'Discrimination': ['discrimination', 'inegalite de traitement'],
+        'Salaires': ['bulletin de salaire', 'fiche de paie', 'salaire', 'heures supplementaires', 'heures sup', 'prime'],
+    },
+    'CIVIL': {
+        'Dettes': ['dette', 'creance', 'huissier', 'saisie', 'recouvrement', 'impaye', 'surendettement'],
+        'Responsabilité civile': ['responsabilite', 'dommage', 'prejudice', 'reparation'],
+        'Litiges contractuels': ['contrat', 'facture', 'commande', 'livraison', 'remboursement', 'garantie', 'sav'],
+    },
+}
+
+# Mots-clés (lowercase, sans accents) pour identifier le TYPE SPÉCIFIQUE
+# au sein d'une sous-catégorie. Vide => pas de précision possible.
+TYPE_KEYWORDS = {
+    'Violence conjugale': {
+        'physique': ['physique', 'coups', 'blessure', 'lesions', 'frappe'],
+        'psychologique': ['psychologique', 'mental', 'depression', 'anxiete', 'humiliation', 'denigre'],
+        'sexuelle': ['sexuelle', 'viol', 'agression sexuelle'],
+    },
+    'Harcèlement': {
+        'moral': ['moral', 'denigre', 'humiliation', 'intimidation'],
+        'sexuel': ['sexuel', 'avances'],
+        'cyber': ['cyber', 'reseau social', 'sms', 'email', 'messagerie'],
+    },
+    'Menaces': {
+        'intimidation': ['intimidation', 'pression', 'menace'],
+    },
+    'Infractions biens': {
+        'vol': ['vol', 'cambriolage'],
+        'escroquerie': ['escroquerie', 'fraude', 'arnaque'],
+        'dégradation': ['degradation', 'destruction', 'vandalisme'],
+    },
+    'Divorce': {
+        'séparation': ['separation', 'rupture'],
+    },
+    'Garde': {
+        'autorité parentale': ['autorite parentale'],
+    },
+    'Litige locatif': {
+        'loyers': ['loyer', 'impaye loyer'],
+        'charges': ['charge'],
+        'dépôt de garantie': ['depot de garantie', 'caution'],
+    },
+    'Malfaçons': {
+        'travaux': ['travaux'],
+    },
+    'Copropriété': {
+        'voisinage': ['voisin', 'voisinage', 'nuisance'],
+    },
+    'Licenciement': {
+        'abusif': ['abusif', 'sans cause reelle'],
+    },
+    'Salaires': {
+        'heures supplémentaires': ['heures supplementaires', 'heures sup'],
+    },
+    'Dettes': {
+        'créances': ['creance', 'huissier'],
+    },
+}
+
+
+# Nature → source qualifiée (PRO/PRIVÉ) pour le badge sur les pièces.
+NATURE_TO_SOURCE = {
+    'officiel': 'PRO',
+    'medical': 'PRO',
+    'judiciaire': 'PRO',
+    'prive': 'PRIVÉ',
+    'temoignage': 'PRIVÉ',
+}
+
+
+def detect_subdomain(domain: str, text: str):
+    """
+    Retourne (sous_domaine, type_specifique) pour un domaine donné,
+    ou (None, None) si rien ne matche.
+    """
+    if not domain or domain not in SUBDOMAIN_KEYWORDS:
+        return None, None
+    subdomain = None
+    for sub, kws in SUBDOMAIN_KEYWORDS[domain].items():
+        for kw in kws:
+            if kw in text:
+                subdomain = sub
+                break
+        if subdomain:
+            break
+    if not subdomain:
+        return None, None
+    # Type spécifique au sein de la sous-catégorie
+    type_spec = None
+    for tname, kws in TYPE_KEYWORDS.get(subdomain, {}).items():
+        for kw in kws:
+            if kw in text:
+                type_spec = tname
+                break
+        if type_spec:
+            break
+    return subdomain, type_spec
+
+
+def derive_source_qualifiee(nature) -> Optional[str]:
+    """Mappe nature_document → 'PRO' | 'PRIVÉ' | None."""
+    return NATURE_TO_SOURCE.get(nature)
+
+
 def normalize_themes(tags) -> List[str]:
     """
     Convertit n'importe quelle liste de thèmes (anciennes clés ou nouvelles)
@@ -245,8 +373,16 @@ def classify_piece(piece: dict) -> dict:
     type_piece = v.get("type_piece") or a.get("type_piece") or ""
     nature: Optional[str] = TYPE_TO_NATURE.get(type_piece)
 
+    # Détection sous-domaine + type spécifique au sein du domaine principal détecté
+    primary_domain = themes[0] if themes else None
+    sous_domaine, type_specifique = detect_subdomain(primary_domain, text)
+
     return {
         "tags_thematiques": themes,
+        "domaine": primary_domain,
+        "sous_domaine": sous_domaine,
+        "type_specifique": type_specifique,
         "sujets_concernes": subjects,
         "nature_document": nature,
+        "source_qualifiee": derive_source_qualifiee(nature),
     }

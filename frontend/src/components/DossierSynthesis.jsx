@@ -62,7 +62,16 @@ export const DossierSynthesis = ({ dossierId, shareToken, synthesis: synthesisPr
   if (!synthesis.pieces_classifiees && !dossierId) return null;
 
   const top = synthesis.themes.slice(0, 5);
-  const needsClassification = dossierId && synthesis.total_pieces > 0 && synthesis.pieces_classifiees < synthesis.total_pieces;
+  // Le bouton de reclassement doit apparaître si :
+  //  - des pièces ne sont pas encore classées, OU
+  //  - au moins un thème détecté n'est PAS un domaine canonique V3
+  //    (PÉNAL/FAMILLE/LOGEMENT/TRAVAIL/CIVIL) → ce qui signifie qu'il
+  //    reste d'anciens tags type "famille"/"sante"/"violence"/etc. à migrer
+  const CANONICAL = new Set(['PÉNAL', 'FAMILLE', 'LOGEMENT', 'TRAVAIL', 'CIVIL']);
+  const hasLegacyThemes = (synthesis.themes || []).some((t) => !CANONICAL.has(t.key));
+  const needsClassification = dossierId && synthesis.total_pieces > 0 && (
+    synthesis.pieces_classifiees < synthesis.total_pieces || hasLegacyThemes
+  );
 
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-sm p-4 mb-4" data-testid="dossier-synthesis">

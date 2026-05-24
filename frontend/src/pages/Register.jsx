@@ -14,13 +14,14 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!name || !email || !password || !confirmPassword) {
       toast.error('Veuillez remplir tous les champs');
       return;
@@ -38,6 +39,11 @@ const Register = () => {
 
     if (getPasswordStrength(password).score < 2) {
       toast.error('Mot de passe trop faible. Ajoutez majuscules, chiffres ou caractères spéciaux.');
+      return;
+    }
+
+    if (!privacyAccepted) {
+      toast.error('Vous devez accepter la politique de confidentialité');
       return;
     }
 
@@ -127,10 +133,35 @@ const Register = () => {
                   data-testid="register-confirm-password"
                 />
               </div>
+
+              <div className="flex items-start gap-2 pt-1">
+                <input
+                  id="privacyAccepted"
+                  type="checkbox"
+                  checked={privacyAccepted}
+                  onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded-sm border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                  data-testid="register-privacy-checkbox"
+                  required
+                />
+                <Label htmlFor="privacyAccepted" className="text-xs text-slate-600 leading-snug cursor-pointer font-normal">
+                  J'ai lu et j'accepte la{' '}
+                  <Link
+                    to="/confidentialite"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sky-600 hover:text-sky-700 underline"
+                    data-testid="register-privacy-link"
+                  >
+                    politique de confidentialité
+                  </Link>
+                </Label>
+              </div>
+
               <Button
                 type="submit"
                 className="w-full bg-slate-900 hover:bg-slate-800 rounded-sm"
-                disabled={loading}
+                disabled={loading || !privacyAccepted}
                 data-testid="register-submit"
               >
                 {loading ? (

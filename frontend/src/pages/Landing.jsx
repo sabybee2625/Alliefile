@@ -469,8 +469,9 @@ const Landing = () => {
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
             <Link to="/pricing" className="hover:text-white" data-testid="footer-pricing-link">Tarifs</Link>
             <Link to="/login" className="hover:text-white" data-testid="footer-login-link">Connexion</Link>
+            <Link to="/mentions-legales" className="hover:text-white" data-testid="footer-mentions-legales-link">Mentions légales</Link>
+            <Link to="/confidentialite" className="hover:text-white" data-testid="footer-confidentialite-link">Politique de confidentialité</Link>
             <Link to="/cgu" className="hover:text-white" data-testid="footer-cgu-link">CGU</Link>
-            <Link to="/privacy" className="hover:text-white" data-testid="footer-privacy-link">Confidentialité</Link>
             <span className="text-slate-500">© {new Date().getFullYear()} AlliéFile</span>
           </div>
         </div>

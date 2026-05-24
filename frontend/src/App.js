@@ -9,11 +9,13 @@ import Dashboard from './pages/Dashboard';
 import DossierView from './pages/DossierView';
 import SharedDossier from './pages/SharedDossier';
 import PricingPage from './pages/Pricing';
-import { CGU, Privacy } from './pages/Legal';
+import { Privacy } from './pages/Legal';
+import MentionsLegales from './pages/MentionsLegales';
+import Confidentialite from './pages/Confidentialite';
+import CGU from './pages/CGU';
 import NotFound from './pages/NotFound';
 import AdminPage from './pages/Admin';
 import ResetPassword, { ForgotPassword } from './pages/ResetPassword';
-import { CookieConsent } from './components/CookieConsent';
 import './App.css';
 
 const LoadingScreen = () => (
@@ -82,6 +84,9 @@ function AppRoutes() {
 
       {/* Legal pages (public) */}
       <Route path="/cgu" element={<CGU />} />
+      <Route path="/confidentialite" element={<Confidentialite />} />
+      <Route path="/mentions-legales" element={<MentionsLegales />} />
+      {/* Alias historique : /privacy → ancienne page Legal.Privacy (compat) */}
       <Route path="/privacy" element={<Privacy />} />
 
       {/* Protected routes */}
@@ -131,7 +136,6 @@ function App() {
             },
           }}
         />
-        <CookieConsent />
       </BrowserRouter>
     </AuthProvider>
   );

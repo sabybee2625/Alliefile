@@ -27,10 +27,10 @@ export default function MentionsLegales() {
           Éditeur du site
         </h2>
         <p className="mb-2">AlliéFile</p>
-        <p className="mb-2">[Forme juridique à compléter — ex : auto-entrepreneur / SAS]</p>
-        <p className="mb-2">[Adresse complète]</p>
-        <p className="mb-2">RCS Lyon — SIREN : [à compléter]</p>
-        <p className="mb-2">Directrice de la publication : [Ton prénom et nom]</p>
+        <p className="mb-2">Entrepreneur individuel (EI)</p>
+        <p className="mb-2">92 Rue Château-Gaillard, 69100 Villeurbanne</p>
+        <p className="mb-2">RCS Lyon — SIREN : 104 673 140</p>
+        <p className="mb-2">Directrice de la publication : Sabrina Harmim</p>
         <p className="mb-2">
           Contact :{' '}
           <a href="mailto:contact@alliefile.com" className="underline">

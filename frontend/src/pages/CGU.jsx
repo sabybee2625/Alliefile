@@ -22,14 +22,16 @@ export default function CGU() {
         <h1 className="text-3xl font-bold mb-2" style={TITLE_STYLE}>
           Conditions générales d'utilisation
         </h1>
-        <p className="text-sm text-slate-500 mb-8">Dernière mise à jour : [date]</p>
+        <p className="text-sm text-slate-500 mb-8">Dernière mise à jour : 7 mai 2026</p>
 
         <h2 className="text-xl font-semibold mt-8 mb-3" style={TITLE_STYLE}>
           Article 1 — Objet
         </h2>
         <p className="mb-2">
           Les présentes CGU régissent l'accès et l'utilisation de la plateforme AlliéFile,
-          accessible à l'adresse alliefile.com, éditée par [raison sociale] (ci-après « AlliéFile »).
+          accessible à l'adresse alliefile.com, éditée par Sabrina Harmim, entrepreneur individuel
+          (EI), immatriculée au RCS de Lyon sous le numéro SIREN 104 673 140, dont le siège est
+          situé 92 Rue Château-Gaillard, 69100 Villeurbanne (ci-après « AlliéFile »).
         </p>
 
         <h2 className="text-xl font-semibold mt-8 mb-3" style={TITLE_STYLE}>

@@ -22,7 +22,7 @@ export default function Confidentialite() {
         <h1 className="text-3xl font-bold mb-2" style={TITLE_STYLE}>
           Politique de confidentialité
         </h1>
-        <p className="text-sm text-slate-500 mb-8">Dernière mise à jour : [date]</p>
+        <p className="text-sm text-slate-500 mb-8">Dernière mise à jour : 7 mai 2026</p>
 
         <h2 className="text-xl font-semibold mt-8 mb-3" style={TITLE_STYLE}>
           Qui sommes-nous

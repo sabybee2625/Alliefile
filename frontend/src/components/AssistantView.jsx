@@ -58,7 +58,8 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
   const [jurisdiction, setJurisdiction] = useState('');
   const [dateStart, setDateStart] = useState(null);
   const [dateEnd, setDateEnd] = useState(null);
-  const [selectedPieces, setSelectedPieces] = useState([]);
+  // RÈGLE 1 : initialisation — selectAll=true, selectedPieceIds=null
+  const [selectedPieceIds, setSelectedPieceIds] = useState(null);
   const [selectAll, setSelectAll] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
@@ -77,27 +78,23 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
   // Show jurisdiction selector only for projet_requete
   const showJurisdiction = documentType === 'projet_requete';
 
-  useEffect(() => {
-    if (selectAll) {
-      setSelectedPieces(validatedPieces.map(p => p.id));
-    }
-  }, [selectAll, pieces]);
-
-  // Reset jurisdiction when document type changes
-  useEffect(() => {
-    if (documentType !== 'projet_requete') {
+  const handleDocumentTypeChange = (value) => {
+    setDocumentType(value);
+    if (value !== 'projet_requete') {
       setJurisdiction('');
     }
-  }, [documentType]);
+  };
 
   const handleGenerate = async () => {
-    if (!selectAll && selectedPieces.length === 0) {
-      toast.error('Sélectionnez au moins une pièce');
+    // RÈGLE 6 : validation avant envoi
+    if (!selectAll && (!selectedPieceIds || selectedPieceIds.length === 0)) {
+      toast.error('Veuillez sélectionner au moins une pièce.');
       return;
     }
 
+    // RÈGLE 8 : juridiction obligatoire pour projet_requete
     if (documentType === 'projet_requete' && !jurisdiction) {
-      toast.error('Veuillez sélectionner une juridiction pour le projet de requête');
+      toast.error('La juridiction est obligatoire pour un projet de requête.');
       return;
     }
 
@@ -109,16 +106,17 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
 
     setGenerating(true);
     setResult(null);
-    
+
     try {
       const res = await dossiersApi.generateAssistant(dossierId, {
         document_type: documentType,
         jurisdiction: jurisdiction || null,
-        piece_ids: selectAll ? [] : selectedPieces,
+        // RÈGLE 5 : null = toutes les pièces, [...] = sélection manuelle
+        piece_ids: selectAll ? null : selectedPieceIds,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
         date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null,
       });
-      
+
       setResult(res.data);
       setEditedContent(res.data.content);
       toast.success('Document généré');
@@ -170,13 +168,15 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
     }
   };
 
-  const togglePiece = (pieceId) => {
-    setSelectAll(false);
-    setSelectedPieces(prev => 
-      prev.includes(pieceId) 
-        ? prev.filter(id => id !== pieceId)
-        : [...prev, pieceId]
-    );
+  // RÈGLE 4 : la case individuelle ne touche jamais selectAll
+  const togglePiece = (pieceId, checked) => {
+    setSelectedPieceIds((prev) => {
+      const current = prev || [];
+      if (checked) {
+        return current.includes(pieceId) ? current : [...current, pieceId];
+      }
+      return current.filter((id) => id !== pieceId);
+    });
   };
 
   const getDocumentTitle = () => {
@@ -199,7 +199,7 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
             Aucune pièce validée
           </h3>
           <p className="text-sm text-slate-500 text-center max-w-md">
-            L'assistant de rédaction fonctionne uniquement à partir des pièces validées.
+            L&apos;assistant de rédaction fonctionne uniquement à partir des pièces validées.
             Analysez et validez vos pièces pour utiliser cette fonctionnalité.
           </p>
         </CardContent>
@@ -213,7 +213,7 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
       <div className="p-3 bg-amber-50 border border-amber-200 rounded-sm flex items-start gap-3">
         <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
         <div className="text-sm text-amber-800">
-          <strong>Important :</strong> L'assistant génère des brouillons à partir des données validées uniquement.
+          <strong>Important :</strong> L&apos;assistant génère des brouillons à partir des données validées uniquement.
           Chaque information cite sa source (Pièce X). Vérifiez et adaptez le texte avant utilisation juridique.
         </div>
       </div>
@@ -231,7 +231,7 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
             {/* Document Type */}
             <div className="space-y-2">
               <Label>Type de document</Label>
-              <Select value={documentType} onValueChange={setDocumentType}>
+              <Select value={documentType} onValueChange={handleDocumentTypeChange}>
                 <SelectTrigger className="rounded-sm" data-testid="doc-type-select">
                   <SelectValue />
                 </SelectTrigger>
@@ -334,43 +334,78 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
             <div className="space-y-2">
               <Label>Pièces à inclure</Label>
               <div className="flex items-center gap-2 mb-2">
-                <Checkbox 
+                <Checkbox
                   id="select-all"
                   checked={selectAll}
                   onCheckedChange={(checked) => {
-                    setSelectAll(checked);
                     if (checked) {
-                      setSelectedPieces(validatedPieces.map(p => p.id));
+                      // RÈGLE 3 : on coche la case maître
+                      setSelectAll(true);
+                      setSelectedPieceIds(null);
+                    } else {
+                      // RÈGLE 2 : on décoche la case maître
+                      // → toutes les cases individuelles cochées par défaut
+                      setSelectAll(false);
+                      setSelectedPieceIds(validatedPieces.map((p) => p.id));
                     }
                   }}
+                  data-testid="assistant-select-all"
                 />
                 <label htmlFor="select-all" className="text-sm">
                   Toutes les pièces validées ({validatedPieces.length})
                 </label>
               </div>
-              
+
               {!selectAll && (
-                <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-200 rounded-sm p-2">
-                  {validatedPieces.map(piece => (
-                    <div key={piece.id} className="flex items-center gap-2">
-                      <Checkbox 
-                        id={`piece-${piece.id}`}
-                        checked={selectedPieces.includes(piece.id)}
-                        onCheckedChange={() => togglePiece(piece.id)}
-                      />
-                      <label htmlFor={`piece-${piece.id}`} className="text-xs flex-1 truncate">
-                        Pièce {piece.numero} - {piece.validated_data?.titre || piece.original_filename}
-                      </label>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-200 rounded-sm p-2">
+                    {validatedPieces.map((piece) => {
+                      const checked = (selectedPieceIds || []).includes(piece.id);
+                      return (
+                        <div key={piece.id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`piece-${piece.id}`}
+                            checked={checked}
+                            onCheckedChange={(v) => togglePiece(piece.id, !!v)}
+                            data-testid={`assistant-piece-checkbox-${piece.id}`}
+                          />
+                          <label htmlFor={`piece-${piece.id}`} className="text-xs flex-1 truncate">
+                            Pièce {piece.numero} - {piece.validated_data?.titre || piece.original_filename}
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* RÈGLE 7 : compteur sélection manuelle */}
+                  <p
+                    className={`text-xs ${
+                      (selectedPieceIds?.length || 0) === 0 ? 'text-red-600' : 'text-slate-500'
+                    }`}
+                    data-testid="assistant-selection-counter"
+                  >
+                    {(selectedPieceIds?.length || 0) === 0
+                      ? 'Veuillez sélectionner au moins une pièce.'
+                      : `${selectedPieceIds.length} pièce(s) sélectionnée(s) sur ${validatedPieces.length}`}
+                  </p>
+                </>
               )}
             </div>
 
+            {/* RÈGLE 8 : juridiction obligatoire (message visible) */}
+            {showJurisdiction && !jurisdiction && (
+              <p className="text-xs text-red-600" data-testid="assistant-jurisdiction-error">
+                La juridiction est obligatoire pour un projet de requête.
+              </p>
+            )}
+
             {/* Generate Button */}
-            <Button 
+            <Button
               onClick={handleGenerate}
-              disabled={generating || (!selectAll && selectedPieces.length === 0) || (showJurisdiction && !jurisdiction)}
+              disabled={
+                generating ||
+                (!selectAll && (!selectedPieceIds || selectedPieceIds.length === 0)) ||
+                (showJurisdiction && !jurisdiction)
+              }
               className="w-full bg-slate-900 hover:bg-slate-800 rounded-sm"
               data-testid="generate-btn"
             >
@@ -434,11 +469,11 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
               <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                 <Info className="w-12 h-12 mb-4 text-slate-300" />
                 <p className="text-sm text-center">
-                  Configurez les options et cliquez sur "Générer" pour créer un brouillon.
+                  Configurez les options et cliquez sur &quot;Générer&quot; pour créer un brouillon.
                 </p>
                 {showJurisdiction && (
                   <p className="text-xs text-amber-600 mt-2">
-                    N'oubliez pas de sélectionner la juridiction pour un projet de requête.
+                    N&apos;oubliez pas de sélectionner la juridiction pour un projet de requête.
                   </p>
                 )}
               </div>

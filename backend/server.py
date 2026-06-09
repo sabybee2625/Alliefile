@@ -236,7 +236,7 @@ class ShareLinkResponse(BaseModel):
 class AssistantRequest(BaseModel):
     document_type: str
     jurisdiction: Optional[str] = None
-    piece_ids: List[str] = []
+    piece_ids: Optional[List[str]] = None  # None = toutes les pièces validées, [...] = sélection manuelle
     date_start: Optional[str] = None
     date_end: Optional[str] = None
 
@@ -2603,7 +2603,6 @@ async def generate_document(dossier_id: str, request: AssistantRequest, user: di
     
     # Check plan restrictions for assistant
     plan = await get_user_plan(user)
-    limits = get_plan_limits(plan)
 
     # FREE plan: only expose_faits allowed, AND only 1 generation per dossier (lifetime)
     if plan == "free":
@@ -2653,10 +2652,12 @@ async def generate_document(dossier_id: str, request: AssistantRequest, user: di
     
     # Get validated pieces only
     query = {"dossier_id": dossier_id, "status": "pret"}
-    if request.piece_ids:
+    if request.piece_ids is not None and len(request.piece_ids) > 0:
         query["id"] = {"$in": request.piece_ids}
-    
+
     pieces = await db.pieces.find(query, {"_id": 0}).sort("numero", 1).to_list(1000)
+    if len(pieces) > 50:
+        logger.info(f"Dossier volumineux : {len(pieces)} pièces envoyées à l'IA pour dossier {dossier_id}")
     
     # Filter by date if provided
     if request.date_start or request.date_end:

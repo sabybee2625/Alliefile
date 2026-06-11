@@ -2796,7 +2796,7 @@ Rédige le projet de requête pour la juridiction {jurisdiction_label or "Juridi
         chat = LlmChat(
             api_key=api_key,
             session_id=f"assistant-{uuid.uuid4()}",
-            system_message="Tu es un assistant juridique. Tu rédiges des documents à partir d'informations VALIDÉES uniquement. Tu ne dois JAMAIS inventer d'information. Chaque fait doit citer sa source (Pièce X)."
+            system_message="Tu es un assistant juridique au service de l'utilisateur. Tu rédiges des documents de son point de vue, en défendant ses intérêts sur la base des faits documentés. Tu cites les fondements juridiques applicables (articles du Code pénal, Code civil, Code du travail, jurisprudence pertinente) chaque fois que c'est utile. Tu restes strictement factuel sur les faits (ne jamais inventer), mais tu construis l'argumentation juridique en faveur de l'utilisateur. Chaque fait doit citer sa source (Pièce X)."
         ).with_model("gemini", "gemini-2.5-flash")
         
         response = await chat.send_message(UserMessage(text=prompt))
@@ -2829,10 +2829,13 @@ Rédige le projet de requête pour la juridiction {jurisdiction_label or "Juridi
     except Exception as e:
         logger.error(f"Erreur assistant détaillée: type={type(e).__name__} msg={str(e)}", exc_info=True)
         logger.error(f"Assistant error: {e}")
-        return AssistantResponse(
-            content="Erreur lors de la génération du document.",
-            pieces_used=pieces_used,
-            warnings=[str(e)]
+        # Retourner le vrai message d'erreur (type + message brut) à l'utilisateur
+        # pour qu'on puisse diagnostiquer sans avoir besoin des logs serveur.
+        error_type = type(e).__name__
+        error_msg = str(e) or "Erreur inconnue"
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erreur IA ({error_type}) : {error_msg}",
         )
 
 # ===================== SHARE LINKS =====================

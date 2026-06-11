@@ -128,6 +128,9 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
           feature: detail.feature || 'assistant_per_dossier',
           message: detail.message,
         });
+      } else if (typeof detail === 'string' && detail) {
+        // Le backend renvoie maintenant le vrai message d'erreur dans `detail`
+        toast.error(detail);
       } else {
         toast.error('Erreur lors de la génération');
       }

@@ -2710,7 +2710,18 @@ Pièce {p['numero']} - {vd.get('titre', p['original_filename'])}:
         "autre": "Juridiction à préciser"
     }
     
-    jurisdiction_label = jurisdiction_labels.get(request.jurisdiction, "Juridiction à préciser") if request.jurisdiction else None
+    # Normalisation : accepter aussi bien la clé courte ("jaf") que la valeur complète
+    _jur = (request.jurisdiction or "").strip().lower()
+    # Construire aussi un mapping inversé valeur → clé
+    _reverse = {v.lower(): k for k, v in jurisdiction_labels.items()}
+    if _jur in jurisdiction_labels:
+        jurisdiction_label = jurisdiction_labels[_jur]
+    elif _jur in _reverse:
+        jurisdiction_label = jurisdiction_labels[_reverse[_jur]]
+    elif _jur:
+        jurisdiction_label = request.jurisdiction  # utiliser tel quel
+    else:
+        jurisdiction_label = None
     
     # Document type prompts (agnostique du contentieux)
     prompts = {
@@ -2755,7 +2766,7 @@ Rédige le projet de courrier:""",
         
         "projet_requete": f"""À partir des informations VALIDÉES suivantes, rédige un projet de requête.
 
-JURIDICTION CIBLÉE: {jurisdiction_label}
+JURIDICTION CIBLÉE: {jurisdiction_label or "Juridiction à préciser"}
 
 RÈGLES STRICTES:
 - Commence par "PROJET DE REQUÊTE – {jurisdiction_label}"
@@ -2768,7 +2779,7 @@ RÈGLES STRICTES:
 Pièces validées:
 {context}
 
-Rédige le projet de requête pour la juridiction {jurisdiction_label}:"""
+Rédige le projet de requête pour la juridiction {jurisdiction_label or "Juridiction à préciser"}:"""
     }
     
     prompt = prompts.get(request.document_type, prompts["expose_faits"])
@@ -2816,6 +2827,7 @@ Rédige le projet de requête pour la juridiction {jurisdiction_label}:"""
         )
         
     except Exception as e:
+        logger.error(f"Erreur assistant détaillée: type={type(e).__name__} msg={str(e)}", exc_info=True)
         logger.error(f"Assistant error: {e}")
         return AssistantResponse(
             content="Erreur lors de la génération du document.",

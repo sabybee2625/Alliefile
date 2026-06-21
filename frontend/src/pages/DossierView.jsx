@@ -866,8 +866,8 @@ const DossierView = () => {
         )}
         
         {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
             <Link
               to="/dashboard"
               className="inline-flex items-center text-sm text-slate-500 hover:text-slate-700 mb-2"
@@ -876,9 +876,9 @@ const DossierView = () => {
               <ArrowLeft className="w-4 h-4 mr-1" />
               Retour aux dossiers
             </Link>
-            <h1 className="font-heading text-2xl font-bold text-slate-900">{dossier.title}</h1>
+            <h1 className="font-heading text-2xl font-bold text-slate-900 break-words">{dossier.title}</h1>
             {dossier.description && (
-              <p className="text-sm text-slate-500 mt-1">{dossier.description}</p>
+              <p className="text-sm text-slate-500 mt-1 break-words">{dossier.description}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -1281,8 +1281,8 @@ const DossierView = () => {
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <CardContent className="py-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-4 min-w-0 flex-1">
                           {/* Selection Checkbox */}
                           {selectMode && (
                             <Checkbox
@@ -1295,9 +1295,9 @@ const DossierView = () => {
                           <div className="w-12 h-12 bg-slate-100 rounded-sm flex items-center justify-center flex-shrink-0">
                             <span className="font-mono font-semibold text-slate-700">{piece.numero}</span>
                           </div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h3 className="font-medium text-slate-900 truncate">
+                              <h3 className="font-medium text-slate-900 break-words min-w-0 max-w-full">
                                 {piece.validated_data?.titre || piece.ai_proposal?.titre || piece.original_filename}
                               </h3>
                               <Badge variant="outline" className={`text-xs ${piece.status === 'pret' ? 'status-pret' : 'status-a_verifier'}`}>

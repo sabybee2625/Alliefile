@@ -2137,7 +2137,12 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
             )
         
         response = await chat.send_message(user_message)
-        
+
+        # Gemini peut renvoyer None (ex: contenu bloqué par les safety filters).
+        # On lève une erreur explicite plutôt que de crasher avec un .strip() sur None.
+        if response is None:
+            raise ValueError("L'IA n'a pas pu analyser ce document (réponse vide — possiblement bloqué par les filtres de sécurité Gemini).")
+
         # Parse JSON response
         response_text = response.strip()
         if response_text.startswith("```json"):

@@ -122,6 +122,9 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
       toast.success('Document généré');
     } catch (error) {
       const detail = error?.response?.data?.detail;
+      const status = error?.response?.status;
+      const code = error?.code; // ex: ECONNABORTED pour les timeouts axios
+
       if (detail && typeof detail === 'object' && detail.error === 'PLAN_LIMIT_EXCEEDED') {
         setUpgrade({
           open: true,
@@ -131,8 +134,12 @@ export const AssistantView = ({ dossierId, pieces = [] }) => {
       } else if (typeof detail === 'string' && detail) {
         // Le backend renvoie maintenant le vrai message d'erreur dans `detail`
         toast.error(detail);
+      } else if (code === 'ECONNABORTED' || code === 'ERR_NETWORK') {
+        toast.error('Timeout réseau — l\'IA a mis trop de temps à répondre. Réessayez avec moins de pièces.');
+      } else if (status) {
+        toast.error(`Erreur ${status} — ${error?.message || 'cause inconnue'}`);
       } else {
-        toast.error('Erreur lors de la génération');
+        toast.error(`Erreur lors de la génération — ${error?.message || 'cause inconnue'}`);
       }
     } finally {
       setGenerating(false);

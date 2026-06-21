@@ -76,6 +76,7 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { PieceFilterBar, usePieceFilters } from '../components/PieceFilterBar';
 import { PieceThemeBadges, PieceClassificationBadges } from '../components/PieceThemeBadges';
 import { DossierSynthesis } from '../components/DossierSynthesis';
+import { ScrollToTopButton } from '../components/ScrollToTopButton';
 
 // Lit l'erreur d'un blob quand le serveur a renvoyé du JSON (cas 403 PLAN_LIMIT_EXCEEDED)
 async function parseBlobError(error) {
@@ -1297,7 +1298,7 @@ const DossierView = () => {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h3 className="font-medium text-slate-900 break-words min-w-0 max-w-full">
+                              <h3 className="font-medium text-slate-900 break-all line-clamp-2 min-w-0 max-w-full" title={piece.validated_data?.titre || piece.ai_proposal?.titre || piece.original_filename}>
                                 {piece.validated_data?.titre || piece.ai_proposal?.titre || piece.original_filename}
                               </h3>
                               <Badge variant="outline" className={`text-xs ${piece.status === 'pret' ? 'status-pret' : 'status-a_verifier'}`}>
@@ -1713,6 +1714,8 @@ const DossierView = () => {
         feature={upgrade.feature}
         message={upgrade.message}
       />
+
+      <ScrollToTopButton />
     </Layout>
   );
 };

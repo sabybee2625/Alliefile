@@ -2138,10 +2138,21 @@ Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
         
         response = await chat.send_message(user_message)
 
-        # Gemini peut renvoyer None (ex: contenu bloqué par les safety filters).
-        # On lève une erreur explicite plutôt que de crasher avec un .strip() sur None.
+        # Le SDK Gemini peut retourner None (timeout, erreur réseau silencieuse,
+        # ou réponse vide). On retente UNE fois avant d'abandonner.
         if response is None:
-            raise ValueError("L'IA n'a pas pu analyser ce document (réponse vide — possiblement bloqué par les filtres de sécurité Gemini).")
+            logger.warning(f"Gemini a renvoyé None pour {original_filename}, retry…")
+            try:
+                response = await chat.send_message(user_message)
+            except Exception as retry_err:
+                logger.error(f"Retry Gemini a échoué pour {original_filename}: {retry_err}")
+                response = None
+
+        if response is None or not str(response).strip():
+            raise ValueError(
+                "L'analyse IA n'a renvoyé aucun contenu. Cela peut venir d'un timeout réseau "
+                "ou d'un problème temporaire avec l'API Gemini. Réessayez dans quelques secondes."
+            )
 
         # Parse JSON response
         response_text = response.strip()

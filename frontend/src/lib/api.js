@@ -161,11 +161,13 @@ export const sharedApi = {
 export const userApi = {
   getStats: () => api.get('/auth/stats'),
   getPlans: () => api.get('/payments/plans'),
-  createCheckout: (planId, billingPeriod, promoCode = null) => 
+  createCheckout: (planId, billingPeriod, promoCode = null, retractationWaived = false) => 
     api.post('/payments/checkout', {
       plan_id: planId,
       billing_period: billingPeriod,
       promo_code: promoCode,
+      retraction_waived: retractationWaived,
+      waived_at: retractationWaived ? new Date().toISOString() : null,
     }),
   checkPaymentStatus: (sessionId) => api.get(`/payments/status/${sessionId}`),
   validatePromoCode: (code, planId) => 

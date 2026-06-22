@@ -49,6 +49,7 @@ from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFS
 from emailing import send_welcome_email_background, send_password_reset_email_background
 from admin import register_admin_routes
 from piece_classifier import classify_piece
+from chatel_reminder import run_chatel_reminder_check
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -734,6 +735,8 @@ async def create_payment_checkout(
             "promo_code": data.promo_code,
             "discount_applied": discount_applied,
             "status": "pending",
+            "retraction_waived": data.retraction_waived,
+            "waived_at": data.waived_at,
             "created_at": now,
             "updated_at": now
         }
@@ -3433,6 +3436,16 @@ async def startup_db_indexes():
         logger.info("MongoDB indexes created successfully")
     except Exception as e:
         logger.warning(f"Index creation warning (may already exist): {e}")
+
+    async def _chatel_loop():
+        while True:
+            try:
+                await run_chatel_reminder_check(db)
+            except Exception as e:
+                logger.error(f"Chatel reminder check failed: {e}")
+            await asyncio.sleep(86400)
+
+    asyncio.create_task(_chatel_loop())
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

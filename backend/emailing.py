@@ -184,3 +184,62 @@ def _reset_html(name: str, reset_url: str) -> str:
 def send_password_reset_email_background(to_email: str, name: str, reset_url: str) -> None:
     """Synchronous wrapper for FastAPI BackgroundTasks."""
     _send_sync(to_email, "Réinitialisation de votre mot de passe AlliéFile", _reset_html(name, reset_url))
+
+
+
+def _chatel_html(name: str, plan_name: str, renewal_date_fr: str, deadline_date_fr: str) -> str:
+    safe_name = (name or "").strip() or "à toi"
+    return f"""\
+<!doctype html>
+<html lang="fr">
+  <body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:32px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:4px;border:1px solid #e2e8f0;">
+          <tr><td style="padding:32px 40px 16px 40px;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#0f172a;width:32px;height:32px;border-radius:4px;text-align:center;vertical-align:middle;color:#ffffff;font-weight:bold;">A</td>
+                <td style="padding-left:10px;font-weight:bold;font-size:18px;color:#0f172a;">AlliéFile</td>
+              </tr>
+            </table>
+          </td></tr>
+          <tr><td style="padding:8px 40px 0 40px;">
+            <h1 style="margin:0 0 16px 0;font-size:22px;color:#0f172a;">Votre abonnement annuel arrive à échéance</h1>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Bonjour {safe_name},
+            </p>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Votre abonnement annuel AlliéFile <strong>{plan_name}</strong> sera automatiquement reconduit le <strong>{renewal_date_fr}</strong>.
+            </p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background-color:#fef3c7;border:1px solid #fde68a;border-radius:4px;">
+              <tr><td style="padding:14px 18px;">
+                <p style="margin:0;font-size:14px;color:#92400e;font-weight:600;">
+                  Date limite pour ne pas reconduire votre abonnement : {deadline_date_fr}
+                </p>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Si vous souhaitez continuer à bénéficier de votre abonnement, vous n'avez aucune action à faire.
+            </p>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Si vous souhaitez résilier, vous pouvez le faire à tout moment depuis votre espace personnel, avant cette date.
+            </p>
+          </td></tr>
+          <tr><td style="padding:24px 40px 32px 40px;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">AlliéFile — Votre allié juridique intelligent</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>
+"""
+
+
+def send_chatel_reminder_email_sync(to_email: str, name: str, plan_name: str, renewal_date_fr: str, deadline_date_fr: str) -> None:
+    _send_sync(
+        to_email,
+        "Votre abonnement AlliéFile annuel arrive à échéance",
+        _chatel_html(name, plan_name, renewal_date_fr, deadline_date_fr),
+    )

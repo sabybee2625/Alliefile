@@ -74,7 +74,43 @@ export default function CGU() {
           Les abonnements payants sont souscrits pour une durée mensuelle ou annuelle, renouvelables
           par tacite reconduction. La résiliation peut être effectuée à tout moment depuis l'espace
           personnel, avec effet à la fin de la période en cours. Aucun remboursement partiel n'est
-          effectué sauf obligation légale.
+          effectué sauf obligation légale. Pour les abonnements annuels, AlliéFile informe l'utilisateur
+          par écrit, entre trois mois et un mois avant la date d'échéance, de la possibilité de ne pas
+          reconduire son abonnement, conformément à l'article L215-1 du Code de la consommation. À
+          défaut d'envoi de cette information, l'utilisateur peut résilier gratuitement son abonnement
+          à tout moment.
+        </p>
+
+        <h2 className="text-xl font-semibold mt-8 mb-3" style={TITLE_STYLE}>
+          Article 5 bis — Droit de rétractation
+        </h2>
+        <p className="mb-2">
+          Conformément à l'article L221-18 du Code de la consommation, l'utilisateur consommateur
+          dispose d'un délai de 14 jours à compter de la souscription pour exercer son droit de
+          rétractation, sans avoir à justifier de motif. Toutefois, en cochant la case prévue à cet
+          effet au moment du paiement, l'utilisateur demande expressément l'exécution immédiate du
+          service et renonce à son droit de rétractation, conformément à l'article L221-28 13° du
+          Code de la consommation. Pour exercer ce droit avant toute renonciation expresse,
+          l'utilisateur peut écrire à contact@alliefile.com.
+        </p>
+
+        <h2 className="text-xl font-semibold mt-8 mb-3" style={TITLE_STYLE}>
+          Article 5 ter — Médiation de la consommation
+        </h2>
+        <p className="mb-2">
+          En cas de litige non résolu directement avec AlliéFile, l'utilisateur consommateur peut
+          recourir gratuitement à un médiateur de la consommation. AlliéFile renvoie l'utilisateur
+          vers la plateforme de Règlement en Ligne des Litiges de la Commission européenne,
+          accessible à l'adresse :{' '}
+          <a
+            href="https://ec.europa.eu/consumers/odr"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            ec.europa.eu/consumers/odr
+          </a>
+          .
         </p>
 
         <h2 className="text-xl font-semibold mt-8 mb-3" style={TITLE_STYLE}>

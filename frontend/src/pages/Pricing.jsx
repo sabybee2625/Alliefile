@@ -36,6 +36,7 @@ const PricingPage = () => {
   const [promoValidation, setPromoValidation] = useState(null);
   const [validatingPromo, setValidatingPromo] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(null);
+  const [retractationWaived, setRetractationWaived] = useState(false);
   
   // Check for payment success/cancel
   useEffect(() => {
@@ -104,16 +105,20 @@ const PricingPage = () => {
       navigate('/login?redirect=/pricing');
       return;
     }
+    if (!retractationWaived) {
+      toast.error("Veuillez cocher la case de renonciation au droit de rétractation pour continuer.");
+      return;
+    }
     
     setProcessingPayment(planId);
     try {
       const response = await userApi.createCheckout(
         planId,
         billingPeriod,
-        promoCode || null
+        promoCode || null,
+        retractationWaived
       );
       
-      // Redirect to Stripe checkout
       window.location.href = response.data.checkout_url;
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erreur lors de la création du paiement');
@@ -176,6 +181,22 @@ const PricingPage = () => {
               </TabsTrigger>
             </TabsList>
           </Tabs>
+        </div>
+
+        {/* Renonciation au droit de rétractation */}
+        <div className="max-w-2xl mx-auto mb-8 flex items-start gap-3 p-4 bg-slate-50 border border-slate-200 rounded-sm">
+          <input
+            type="checkbox"
+            id="retractation-waiver"
+            checked={retractationWaived}
+            onChange={(e) => setRetractationWaived(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded-sm border-slate-300 cursor-pointer"
+            data-testid="retractation-waiver-checkbox"
+          />
+          <label htmlFor="retractation-waiver" className="text-sm text-slate-600 cursor-pointer">
+            Je demande l'exécution immédiate du service et renonce expressément à mon droit de
+            rétractation de 14 jours, conformément à l'article L221-28 13° du Code de la consommation.
+          </label>
         </div>
 
         {/* Plans Grid */}
@@ -280,7 +301,7 @@ const PricingPage = () => {
                 <Button 
                   className="w-full bg-blue-600 hover:bg-blue-700 rounded-sm"
                   onClick={() => handleSubscribe('standard')}
-                  disabled={processingPayment === 'standard' || getCurrentPlan() === 'standard'}
+                  disabled={processingPayment === 'standard' || getCurrentPlan() === 'standard' || !retractationWaived}
                 >
                   {processingPayment === 'standard' ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -338,7 +359,7 @@ const PricingPage = () => {
                 <Button 
                   className="w-full bg-amber-600 hover:bg-amber-700 rounded-sm"
                   onClick={() => handleSubscribe('premium')}
-                  disabled={processingPayment === 'premium' || getCurrentPlan() === 'premium'}
+                  disabled={processingPayment === 'premium' || getCurrentPlan() === 'premium' || !retractationWaived}
                 >
                   {processingPayment === 'premium' ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

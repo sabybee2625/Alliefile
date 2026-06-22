@@ -84,6 +84,8 @@ class CreateCheckoutRequest(BaseModel):
     plan_id: str = Field(..., description="Plan ID: 'standard' or 'premium'")
     billing_period: str = Field("monthly", description="'monthly' or 'yearly'")
     promo_code: Optional[str] = Field(None, description="Optional promo code")
+    retraction_waived: bool = Field(False, description="Renonciation expresse au droit de rétractation")
+    waived_at: Optional[str] = Field(None, description="Horodatage ISO de la renonciation")
 
 
 class CheckoutResponse(BaseModel):
@@ -102,7 +104,9 @@ class PaymentTransaction(BaseModel):
     currency: str
     promo_code: Optional[str] = None
     discount_applied: float = 0.0
-    status: str = "pending"  # pending, paid, failed, expired
+    status: str = "pending"
+    retraction_waived: bool = False
+    waived_at: Optional[str] = None
     created_at: str
     updated_at: str
 

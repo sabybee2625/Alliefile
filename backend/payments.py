@@ -4,6 +4,7 @@ Handles checkout sessions, webhooks, and promo codes
 """
 import os
 import logging
+import stripe
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
@@ -63,6 +64,26 @@ SUBSCRIPTION_PLANS = {
         ]
     }
 }
+
+# Stripe price IDs (récurrents) pour le mode abonnement natif
+STRIPE_PRICE_IDS = {
+    "standard": {
+        "monthly": "price_1TTnU5Lq6tTxbqJi49oQbEqt",
+        "yearly": "price_1ToHtaLq6tTxbqJiwuYviRF4",
+    },
+    "premium": {
+        "monthly": "price_1TTnWULq6tTxbqJi4TsA9yL3",
+        "yearly": "price_1ToHuULq6tTxbqJikyZllGPz",
+    },
+}
+
+
+def get_stripe_price_id(plan_id: str, billing_period: str) -> str:
+    """Retourne le price_id Stripe (récurrent) correspondant"""
+    plan_id = normalize_plan_id(plan_id)
+    period = "yearly" if billing_period == "yearly" else "monthly"
+    return STRIPE_PRICE_IDS[plan_id][period]
+
 
 # Public slug -> internal key mapping (frontend may send either)
 PLAN_SLUG_ALIASES = {
@@ -232,6 +253,41 @@ async def create_checkout_session(
     
     session = await stripe_checkout.create_checkout_session(checkout_request)
     return session
+
+
+async def create_subscription_checkout_session(
+    api_key: str,
+    origin_url: str,
+    user_id: str,
+    user_email: str,
+    plan_id: str,
+    billing_period: str,
+):
+    """Crée une session Stripe Checkout en mode abonnement (récurrent réel)"""
+    stripe.api_key = api_key
+    price_id = get_stripe_price_id(plan_id, billing_period)
+
+    success_url = f"{origin_url}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/subscription/cancel"
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        line_items=[{"price": price_id, "quantity": 1}],
+        customer_email=user_email,
+        success_url=success_url,
+        cancel_url=cancel_url,
+        subscription_data={
+            "metadata": {"user_id": user_id, "plan_id": plan_id, "billing_period": billing_period}
+        },
+        metadata={"user_id": user_id, "plan_id": plan_id, "billing_period": billing_period},
+    )
+    return {"checkout_url": session.url, "session_id": session.id}
+
+
+async def get_native_checkout_status(api_key: str, session_id: str):
+    """Vérifie le statut d'une session créée en mode abonnement (native Stripe, pas emergentintegrations)"""
+    stripe.api_key = api_key
+    return stripe.checkout.Session.retrieve(session_id)
 
 
 async def get_checkout_status(api_key: str, webhook_url: str, session_id: str) -> CheckoutStatusResponse:

@@ -7,10 +7,10 @@ import {
 } from './ui/dialog';
 import { Button } from './ui/button';
 import { piecesApi } from '../lib/api';
-import { Loader2, Download, FileText, Image, FileQuestion, ExternalLink } from 'lucide-react';
+import { Loader2, Download, FileText, Image, FileQuestion, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
-export const FilePreviewModal = ({ piece, onClose }) => {
+export const FilePreviewModal = ({ piece, onClose, onNavigate, hasPrev, hasNext }) => {
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [error, setError] = useState(null);
@@ -53,6 +53,22 @@ export const FilePreviewModal = ({ piece, onClose }) => {
     };
   }, [piece.id, canPreview, isDocx]);
 
+  // Navigation clavier ← / → dans la liste filtrée
+  useEffect(() => {
+    if (typeof onNavigate !== 'function') return undefined;
+    const handleKey = (e) => {
+      if (e.key === 'ArrowLeft' && hasPrev) {
+        e.preventDefault();
+        onNavigate(-1);
+      } else if (e.key === 'ArrowRight' && hasNext) {
+        e.preventDefault();
+        onNavigate(1);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onNavigate, hasPrev, hasNext]);
+
   const handleDownload = async () => {
     try {
       await piecesApi.downloadFile(piece.id, piece.original_filename);
@@ -80,15 +96,37 @@ export const FilePreviewModal = ({ piece, onClose }) => {
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="font-heading flex items-center gap-2">
-              Pièce {piece.numero} - {piece.original_filename}
-            </DialogTitle>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onNavigate?.(-1)}
+                disabled={!hasPrev}
+                data-testid="preview-nav-prev"
+                aria-label="Pièce précédente"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onNavigate?.(1)}
+                disabled={!hasNext}
+                data-testid="preview-nav-next"
+                aria-label="Pièce suivante"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+              <DialogTitle className="font-heading flex items-center gap-2 min-w-0 truncate">
+                Pièce {piece.numero} - {piece.original_filename}
+              </DialogTitle>
+            </div>
             <Button
               variant="outline"
               size="sm"
               onClick={handleDownload}
-              className="rounded-sm"
+              className="rounded-sm flex-shrink-0"
             >
               <Download className="w-4 h-4 mr-1" />
               Télécharger

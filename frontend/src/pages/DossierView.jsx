@@ -301,6 +301,15 @@ const DossierView = () => {
     .filter(Boolean)
   )];
 
+  // Navigation dans la modale d'aperçu (basée sur la liste filtrée courante)
+  const previewIndex = previewPiece ? filteredPieces.findIndex(p => p.id === previewPiece.id) : -1;
+  const handleNavigatePreview = (direction) => {
+    const newIndex = previewIndex + direction;
+    if (newIndex >= 0 && newIndex < filteredPieces.length) {
+      setPreviewPiece(filteredPieces[newIndex]);
+    }
+  };
+
   // Get filter label for display
   const getFilterLabel = () => {
     if (statusFilter === 'a_verifier') return 'À vérifier';
@@ -1535,6 +1544,9 @@ const DossierView = () => {
         <FilePreviewModal
           piece={previewPiece}
           onClose={() => setPreviewPiece(null)}
+          onNavigate={handleNavigatePreview}
+          hasPrev={previewIndex > 0}
+          hasNext={previewIndex >= 0 && previewIndex < filteredPieces.length - 1}
         />
       )}
 

@@ -657,6 +657,8 @@ from payments import (
     create_checkout_session,
     get_checkout_status,
     handle_stripe_webhook,
+    create_subscription_checkout_session,
+    get_native_checkout_status,
     STRIPE_AVAILABLE,
     normalize_plan_id
 )
@@ -688,6 +690,47 @@ async def create_payment_checkout(
     if data.plan_id not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Plan invalide")
     
+    origin_url = request.headers.get("origin") or str(request.base_url).rstrip("/")
+
+    if not data.promo_code:
+        # Nouveau flux : vrai abonnement Stripe récurrent
+        base_amount, currency = get_plan_price(data.plan_id, data.billing_period)
+        try:
+            sub_session = await create_subscription_checkout_session(
+                api_key=api_key,
+                origin_url=origin_url,
+                user_id=user["id"],
+                user_email=user["email"],
+                plan_id=data.plan_id,
+                billing_period=data.billing_period,
+            )
+            now = datetime.now(timezone.utc).isoformat()
+            transaction = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "user_email": user["email"],
+                "session_id": sub_session["session_id"],
+                "plan_id": data.plan_id,
+                "billing_period": data.billing_period,
+                "amount": base_amount,
+                "currency": currency,
+                "promo_code": None,
+                "discount_applied": 0.0,
+                "status": "pending",
+                "retraction_waived": data.retraction_waived,
+                "waived_at": data.waived_at,
+                "created_at": now,
+                "updated_at": now,
+                "is_subscription": True,
+            }
+            await db.payment_transactions.insert_one(transaction)
+            logger.info(f"Created subscription checkout {sub_session['session_id']} for user {user['id']}")
+            return CheckoutResponse(checkout_url=sub_session["checkout_url"], session_id=sub_session["session_id"])
+        except Exception as e:
+            logger.error(f"Error creating subscription checkout: {e}")
+            raise HTTPException(status_code=500, detail="Erreur lors de la création du paiement")
+
+    # --- Code existant pour le flux avec code promo (paiement ponctuel) ---
     # Get base price (SERVER-SIDE only)
     base_amount, currency = get_plan_price(data.plan_id, data.billing_period)
     
@@ -777,7 +820,32 @@ async def check_payment_status(session_id: str, request: Request, user: dict = D
     # If already processed, return status
     if transaction["status"] == "paid":
         return {"status": "paid", "message": "Paiement déjà traité"}
-    
+
+    if transaction.get("is_subscription"):
+        # Session créée en mode abonnement natif : vérification différente
+        try:
+            native_session = await get_native_checkout_status(api_key, session_id)
+            now = datetime.now(timezone.utc).isoformat()
+            if native_session.payment_status == "paid" or native_session.status == "complete":
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": {"status": "paid", "updated_at": now}}
+                )
+                # Ne PAS mettre à jour le plan utilisateur ici : c'est le webhook
+                # checkout.session.completed qui s'en charge de façon fiable.
+                return {"status": "paid", "message": "Paiement confirmé, activation en cours"}
+            elif native_session.status == "expired":
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": {"status": "expired", "updated_at": now}}
+                )
+                return {"status": "expired", "message": "Session de paiement expirée"}
+            else:
+                return {"status": "pending", "message": "Paiement en cours de traitement"}
+        except Exception as e:
+            logger.error(f"Error checking native subscription status: {e}")
+            raise HTTPException(status_code=500, detail="Erreur lors de la vérification du paiement")
+
     try:
         # Check with Stripe
         status = await get_checkout_status(api_key, webhook_url, session_id)
@@ -855,6 +923,92 @@ async def stripe_webhook(request: Request):
     webhook_url = f"{str(request.base_url).rstrip('/')}/api/webhook/stripe"
     
     body = await request.body()
+
+    stripe_signature = request.headers.get("Stripe-Signature", "")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+
+    if webhook_secret:
+        import stripe as stripe_native
+        try:
+            native_event = stripe_native.Webhook.construct_event(body, stripe_signature, webhook_secret)
+        except Exception as e:
+            logger.error(f"Signature webhook invalide: {e}")
+            return {"status": "error", "error": "invalid signature"}
+
+        now = datetime.now(timezone.utc).isoformat()
+        etype = native_event["type"]
+        obj = native_event["data"]["object"]
+        stripe_native.api_key = api_key
+
+        if etype == "checkout.session.completed" and obj.get("mode") == "subscription":
+            meta = obj.get("metadata", {}) or {}
+            user_id = meta.get("user_id")
+            plan_id = meta.get("plan_id")
+            customer_id = obj.get("customer")
+            subscription_id = obj.get("subscription")
+            if user_id and plan_id and subscription_id:
+                sub = stripe_native.Subscription.retrieve(subscription_id)
+                period_end = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc).isoformat()
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {
+                        "plan": plan_id,
+                        "plan_status": "active",
+                        "plan_expires_at": period_end,
+                        "current_period_end": period_end,
+                        "stripe_customer_id": customer_id,
+                        "stripe_subscription_id": subscription_id,
+                        "updated_at": now,
+                    }}
+                )
+                await db.payment_transactions.update_one(
+                    {"session_id": obj.get("id")},
+                    {"$set": {"status": "paid", "updated_at": now}}
+                )
+                logger.info(f"[Subscription] user {user_id} upgraded to {plan_id}")
+            return {"status": "received", "event_type": etype}
+
+        elif etype == "invoice.payment_succeeded":
+            customer_id = obj.get("customer")
+            sub_id = obj.get("subscription")
+            if customer_id and sub_id:
+                existing_user = await db.users.find_one({"stripe_customer_id": customer_id}, {"_id": 0})
+                if existing_user:
+                    sub = stripe_native.Subscription.retrieve(sub_id)
+                    period_end = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc).isoformat()
+                    await db.users.update_one(
+                        {"id": existing_user["id"]},
+                        {"$set": {"plan_status": "active", "plan_expires_at": period_end, "current_period_end": period_end, "updated_at": now}}
+                    )
+                    logger.info(f"[Subscription] renewed for user {existing_user['id']}, period_end={period_end}")
+            return {"status": "received", "event_type": etype}
+
+        elif etype == "invoice.payment_failed":
+            customer_id = obj.get("customer")
+            if customer_id:
+                await db.users.update_one({"stripe_customer_id": customer_id}, {"$set": {"plan_status": "past_due", "updated_at": now}})
+            return {"status": "received", "event_type": etype}
+
+        elif etype == "customer.subscription.deleted":
+            customer_id = obj.get("customer")
+            if customer_id:
+                await db.users.update_one({"stripe_customer_id": customer_id}, {"$set": {"plan_status": "canceled", "updated_at": now}})
+            return {"status": "received", "event_type": etype}
+
+        elif etype == "customer.subscription.updated":
+            customer_id = obj.get("customer")
+            if customer_id:
+                period_end = datetime.fromtimestamp(obj["current_period_end"], tz=timezone.utc).isoformat()
+                status_map = {"active": "active", "past_due": "past_due", "canceled": "canceled", "unpaid": "past_due"}
+                await db.users.update_one(
+                    {"stripe_customer_id": customer_id},
+                    {"$set": {"plan_status": status_map.get(obj.get("status"), "active"), "current_period_end": period_end, "plan_expires_at": period_end, "updated_at": now}}
+                )
+            return {"status": "received", "event_type": etype}
+
+        # Si aucun cas ci-dessus ne correspond, continuer vers le code existant en dessous.
+
+    # --- Code existant ci-dessous pour les anciens paiements ponctuels (avec code promo) ---
     signature = request.headers.get("Stripe-Signature", "")
     
     try:

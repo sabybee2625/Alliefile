@@ -659,6 +659,7 @@ from payments import (
     handle_stripe_webhook,
     create_subscription_checkout_session,
     get_native_checkout_status,
+    STRIPE_PRICE_IDS,
     STRIPE_AVAILABLE,
     normalize_plan_id
 )
@@ -966,6 +967,49 @@ async def stripe_webhook(request: Request):
                     {"$set": {"status": "paid", "updated_at": now}}
                 )
                 logger.info(f"[Subscription] user {user_id} upgraded to {plan_id}")
+            return {"status": "received", "event_type": etype}
+
+        elif etype == "customer.subscription.created":
+            customer_id = obj.get("customer")
+            price_id = None
+            items = obj.get("items", {}).get("data", [])
+            if items:
+                price_id = items[0].get("price", {}).get("id")
+
+            # Retrouver le plan à partir du price_id
+            plan_id = None
+            for pid, periods in STRIPE_PRICE_IDS.items():
+                if price_id in periods.values():
+                    plan_id = pid
+                    break
+
+            if customer_id and plan_id:
+                # Chercher si l'utilisateur est déjà relié à ce customer_id
+                existing_user = await db.users.find_one({"stripe_customer_id": customer_id}, {"_id": 0})
+                if not existing_user:
+                    # Pas encore relié : retrouver via l'email Stripe du client
+                    stripe_customer = stripe_native.Customer.retrieve(customer_id)
+                    customer_email = stripe_customer.get("email")
+                    if customer_email:
+                        existing_user = await db.users.find_one({"email": customer_email}, {"_id": 0})
+
+                if existing_user:
+                    period_end = datetime.fromtimestamp(obj["current_period_end"], tz=timezone.utc).isoformat()
+                    await db.users.update_one(
+                        {"id": existing_user["id"]},
+                        {"$set": {
+                            "plan": plan_id,
+                            "plan_status": "active",
+                            "plan_expires_at": period_end,
+                            "current_period_end": period_end,
+                            "stripe_customer_id": customer_id,
+                            "stripe_subscription_id": obj.get("id"),
+                            "updated_at": now,
+                        }}
+                    )
+                    logger.info(f"[Subscription manuelle] user {existing_user['id']} relié et activé sur {plan_id}")
+                else:
+                    logger.warning(f"[Subscription manuelle] Aucun utilisateur AlliéFile trouvé pour customer {customer_id}")
             return {"status": "received", "event_type": etype}
 
         elif etype == "invoice.payment_succeeded":

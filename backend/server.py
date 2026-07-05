@@ -928,6 +928,13 @@ async def stripe_webhook(request: Request):
     stripe_signature = request.headers.get("Stripe-Signature", "")
     webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
 
+    def get_subscription_period_end(subscription):
+        """Récupère current_period_end, compatible anciennes et nouvelles versions API Stripe"""
+        try:
+            return subscription["items"]["data"][0]["current_period_end"]
+        except (KeyError, IndexError, TypeError):
+            return subscription.get("current_period_end")
+
     if webhook_secret:
         import stripe as stripe_native
         try:
@@ -949,7 +956,7 @@ async def stripe_webhook(request: Request):
             subscription_id = obj.get("subscription")
             if user_id and plan_id and subscription_id:
                 sub = stripe_native.Subscription.retrieve(subscription_id)
-                period_end = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc).isoformat()
+                period_end = datetime.fromtimestamp(get_subscription_period_end(sub), tz=timezone.utc).isoformat()
                 await db.users.update_one(
                     {"id": user_id},
                     {"$set": {
@@ -994,7 +1001,7 @@ async def stripe_webhook(request: Request):
                         existing_user = await db.users.find_one({"email": customer_email}, {"_id": 0})
 
                 if existing_user:
-                    period_end = datetime.fromtimestamp(obj["current_period_end"], tz=timezone.utc).isoformat()
+                    period_end = datetime.fromtimestamp(get_subscription_period_end(obj), tz=timezone.utc).isoformat()
                     await db.users.update_one(
                         {"id": existing_user["id"]},
                         {"$set": {
@@ -1019,7 +1026,7 @@ async def stripe_webhook(request: Request):
                 existing_user = await db.users.find_one({"stripe_customer_id": customer_id}, {"_id": 0})
                 if existing_user:
                     sub = stripe_native.Subscription.retrieve(sub_id)
-                    period_end = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc).isoformat()
+                    period_end = datetime.fromtimestamp(get_subscription_period_end(sub), tz=timezone.utc).isoformat()
                     await db.users.update_one(
                         {"id": existing_user["id"]},
                         {"$set": {"plan_status": "active", "plan_expires_at": period_end, "current_period_end": period_end, "updated_at": now}}
@@ -1042,7 +1049,7 @@ async def stripe_webhook(request: Request):
         elif etype == "customer.subscription.updated":
             customer_id = obj.get("customer")
             if customer_id:
-                period_end = datetime.fromtimestamp(obj["current_period_end"], tz=timezone.utc).isoformat()
+                period_end = datetime.fromtimestamp(get_subscription_period_end(obj), tz=timezone.utc).isoformat()
                 status_map = {"active": "active", "past_due": "past_due", "canceled": "canceled", "unpaid": "past_due"}
                 await db.users.update_one(
                     {"stripe_customer_id": customer_id},

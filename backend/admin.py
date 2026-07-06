@@ -72,6 +72,14 @@ class UserAdminResponse(BaseModel):
     plan_status: Optional[str] = None
     plan_expires_at: Optional[str] = None
     created_at: str
+    # V2 audit
+    dossier_count: int = 0
+    total_paid_eur: float = 0.0
+    promo_code_used: Optional[str] = None
+    scheduled_deletion: Optional[str] = None
+    deleted_at: Optional[str] = None
+    deleted_by: Optional[str] = None   # 'self' | 'admin' | None
+    deletion_reason: Optional[str] = None
 
 
 def register_admin_routes(api_router, db, get_current_user):
@@ -117,7 +125,8 @@ def register_admin_routes(api_router, db, get_current_user):
     async def admin_list_users(
         q: Optional[str] = Query(None, description="Filtre par email/nom"),
         plan: Optional[str] = Query(None, description="Filtre par plan"),
-        limit: int = Query(100, le=500),
+        status: Optional[str] = Query(None, description="'active' | 'scheduled' | 'deleted' | 'all' (default 'all')"),
+        limit: int = Query(200, le=1000),
         _: dict = Depends(require_admin),
     ):
         query: dict = {}
@@ -128,8 +137,32 @@ def register_admin_routes(api_router, db, get_current_user):
                 {"email": {"$regex": q, "$options": "i"}},
                 {"name": {"$regex": q, "$options": "i"}},
             ]
+        if status == "active":
+            query["deleted_at"] = {"$exists": False}
+            query["scheduled_deletion"] = {"$exists": False}
+        elif status == "scheduled":
+            query["scheduled_deletion"] = {"$exists": True}
+            query["deleted_at"] = {"$exists": False}
+        elif status == "deleted":
+            query["deleted_at"] = {"$exists": True}
+        # status == 'all' ou None → aucun filtre : l'admin voit TOUT
+
         users = []
         async for u in db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).limit(limit):
+            # Compter les dossiers de cet utilisateur
+            dossier_count = await db.dossiers.count_documents({"user_id": u["id"]})
+
+            # Récupérer le total payé + le dernier code promo utilisé
+            total_paid = 0.0
+            promo_code_used: Optional[str] = None
+            async for tx in db.payment_transactions.find(
+                {"user_id": u["id"], "status": "paid"},
+                {"_id": 0, "amount": 1, "promo_code": 1, "created_at": 1}
+            ).sort("created_at", -1):
+                total_paid += float(tx.get("amount", 0))
+                if promo_code_used is None and tx.get("promo_code"):
+                    promo_code_used = tx["promo_code"]
+
             users.append(UserAdminResponse(
                 id=u["id"],
                 email=u["email"],
@@ -138,6 +171,13 @@ def register_admin_routes(api_router, db, get_current_user):
                 plan_status=u.get("plan_status"),
                 plan_expires_at=u.get("plan_expires_at") or u.get("current_period_end"),
                 created_at=u.get("created_at", ""),
+                dossier_count=dossier_count,
+                total_paid_eur=round(total_paid, 2),
+                promo_code_used=promo_code_used,
+                scheduled_deletion=u.get("scheduled_deletion"),
+                deleted_at=u.get("deleted_at"),
+                deleted_by=u.get("deleted_by"),
+                deletion_reason=u.get("deletion_reason"),
             ))
         return users
 
@@ -177,36 +217,49 @@ def register_admin_routes(api_router, db, get_current_user):
     @api_router.delete("/admin/users/{user_id}")
     async def admin_delete_user(
         user_id: str,
-        _: dict = Depends(require_admin),
+        reason: Optional[str] = Query(None, description="Motif de la suppression (optionnel)"),
+        admin_user: dict = Depends(require_admin),
     ):
-        """Supprime un utilisateur et toutes ses données (dossiers, pièces, partages, transactions)."""
+        """Soft-delete de l'utilisateur : marque deleted_at + deleted_by='admin'.
+        Ses données (dossiers, pièces, transactions) restent en base pour audit.
+        Une purge automatique les efface définitivement 90 jours plus tard."""
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Récupère tous les IDs de dossiers de l'utilisateur
-        dossier_ids = [d["id"] async for d in db.dossiers.find({"user_id": user_id}, {"id": 1})]
+        now = datetime.now(timezone.utc).isoformat()
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {
+                "deleted_at": now,
+                "deleted_by": "admin",
+                "deleted_by_email": (admin_user.get("email") or "").lower(),
+                "deletion_reason": reason or "Suppression administrateur",
+                "updated_at": now,
+            }, "$unset": {"scheduled_deletion": ""}}
+        )
+        logger.info(f"Admin soft-delete user={user_id} email={user.get('email')} by={admin_user.get('email')}")
+        return {"ok": True, "soft_deleted": True, "deleted_at": now}
 
-        deleted = {
-            "dossiers": 0,
-            "pieces": 0,
-            "share_links": 0,
-            "share_access_logs": 0,
-            "payment_transactions": 0,
-        }
-        if dossier_ids:
-            r = await db.pieces.delete_many({"dossier_id": {"$in": dossier_ids}})
-            deleted["pieces"] = r.deleted_count
-            r = await db.share_links.delete_many({"dossier_id": {"$in": dossier_ids}})
-            deleted["share_links"] = r.deleted_count
-            r = await db.dossiers.delete_many({"user_id": user_id})
-            deleted["dossiers"] = r.deleted_count
-        r = await db.payment_transactions.delete_many({"user_id": user_id})
-        deleted["payment_transactions"] = r.deleted_count
-        await db.users.delete_one({"id": user_id})
-
-        logger.info(f"Admin deleted user={user_id} email={user.get('email')} stats={deleted}")
-        return {"ok": True, "deleted": deleted}
+    @api_router.post("/admin/users/{user_id}/restore")
+    async def admin_restore_user(
+        user_id: str,
+        _: dict = Depends(require_admin),
+    ):
+        """Restaure un utilisateur soft-deleted (avant purge automatique)."""
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        now = datetime.now(timezone.utc).isoformat()
+        await db.users.update_one(
+            {"id": user_id},
+            {"$unset": {
+                "deleted_at": "", "deleted_by": "", "deleted_by_email": "",
+                "deletion_reason": "", "scheduled_deletion": ""
+            }, "$set": {"updated_at": now}}
+        )
+        logger.info(f"Admin restored user={user_id}")
+        return {"ok": True, "restored": True}
 
     @api_router.get("/admin/promo-codes")
     async def admin_list_promos(_: dict = Depends(require_admin)):

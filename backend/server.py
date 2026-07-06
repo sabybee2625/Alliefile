@@ -50,6 +50,7 @@ from emailing import send_welcome_email_background, send_password_reset_email_ba
 from admin import register_admin_routes
 from piece_classifier import classify_piece
 from chatel_reminder import run_chatel_reminder_check
+from deletion_purge import run_deletion_purge
 
 # MongoDB connection with SSL certificate handling for Atlas
 import certifi
@@ -437,12 +438,16 @@ async def login(data: UserLogin, request: Request):
     user = await db.users.find_one({"email": data.email}, {"_id": 0})
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Check if account has scheduled deletion - cancel it on login
+
+    # Bloquer les comptes supprimés par l'admin (soft-delete)
+    if user.get("deleted_at"):
+        raise HTTPException(status_code=403, detail="Ce compte a été supprimé. Contactez le support.")
+
+    # Check if account has scheduled deletion - cancel it on login (self-delete only)
     if user.get("scheduled_deletion"):
         await db.users.update_one(
             {"id": user["id"]},
-            {"$unset": {"scheduled_deletion": ""}}
+            {"$unset": {"scheduled_deletion": "", "deleted_by": ""}}
         )
         logger.info(f"Account deletion cancelled on login: user={user['id']}")
     
@@ -3302,24 +3307,26 @@ class AccountDeleteRequest(BaseModel):
 async def delete_account(user: dict = Depends(get_current_user), immediate: bool = False):
     """
     Delete user account.
-    - immediate=False (default): Schedule deletion in 7 days (can be cancelled by logging in)
+    - immediate=False (default): Schedule deletion in 90 days (soft-delete, can be cancelled by logging in)
     - immediate=True: Delete immediately and permanently
     """
     user_id = user["id"]
     
     if not immediate:
-        # Schedule deletion for 7 days from now
-        deletion_date = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        # Schedule deletion for 90 days from now (soft-delete)
+        deletion_date = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
+        now_iso = datetime.now(timezone.utc).isoformat()
         await db.users.update_one(
             {"id": user_id},
             {"$set": {
                 "scheduled_deletion": deletion_date,
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "deleted_by": "self",
+                "updated_at": now_iso
             }}
         )
         logger.info(f"Account deletion scheduled: user={user_id}, date={deletion_date}")
         return {
-            "message": "Suppression programmée dans 7 jours. Reconnectez-vous pour annuler.",
+            "message": "Suppression programmée dans 90 jours. Reconnectez-vous pour annuler.",
             "scheduled_deletion": deletion_date,
             "immediate": False
         }
@@ -3371,7 +3378,7 @@ async def cancel_account_deletion(user: dict = Depends(get_current_user)):
     """Cancel scheduled account deletion"""
     await db.users.update_one(
         {"id": user["id"]},
-        {"$unset": {"scheduled_deletion": ""}}
+        {"$unset": {"scheduled_deletion": "", "deleted_by": ""}}
     )
     return {"message": "Suppression annulée", "cancelled": True}
 
@@ -3651,6 +3658,16 @@ async def startup_db_indexes():
             await asyncio.sleep(86400)
 
     asyncio.create_task(_chatel_loop())
+
+    async def _purge_loop():
+        while True:
+            try:
+                await run_deletion_purge(db, storage)
+            except Exception as e:
+                logger.error(f"Deletion purge failed: {e}")
+            await asyncio.sleep(86400)
+
+    asyncio.create_task(_purge_loop())
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

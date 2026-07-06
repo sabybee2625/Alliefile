@@ -160,7 +160,7 @@ const UsersPanel = () => {
   };
 
   const deleteUser = async (userId, email) => {
-    if (!window.confirm(`Supprimer définitivement le compte ${email} et toutes ses données ? Cette action est irréversible.`)) {
+    if (!window.confirm(`Marquer le compte ${email} comme supprimé ? Les données restent en base 90 jours (audit possible), puis sont effacées définitivement. Le compte pourra être restauré avant échéance.`)) {
       return;
     }
     try {
@@ -193,32 +193,64 @@ const UsersPanel = () => {
                 <TableHead>Nom</TableHead>
                 <TableHead>Plan</TableHead>
                 <TableHead>Statut</TableHead>
+                <TableHead>Dossiers</TableHead>
+                <TableHead>Payé</TableHead>
+                <TableHead>Code promo</TableHead>
                 <TableHead>Créé le</TableHead>
+                <TableHead>Suppression</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.id} data-testid={`admin-user-row-${u.id}`}>
-                  <TableCell className="text-sm">{u.email}</TableCell>
+              {users.map((u) => {
+                const isDeleted = !!u.deleted_at;
+                const isScheduled = !!u.scheduled_deletion && !isDeleted;
+                return (
+                <TableRow key={u.id} data-testid={`admin-user-row-${u.id}`} className={isDeleted ? 'opacity-60 bg-red-50/40' : (isScheduled ? 'bg-amber-50/40' : '')}>
+                  <TableCell className="text-sm break-all">{u.email}</TableCell>
                   <TableCell className="text-sm">{u.name}</TableCell>
                   <TableCell><Badge>{planLabel(u.plan)}</Badge></TableCell>
                   <TableCell className="text-xs text-slate-500">{u.plan_status || '—'}</TableCell>
+                  <TableCell className="text-xs text-slate-700 font-mono text-center">{u.dossier_count ?? 0}</TableCell>
+                  <TableCell className="text-xs text-slate-700 font-mono">{(u.total_paid_eur || 0).toFixed(2)} €</TableCell>
+                  <TableCell className="text-xs">{u.promo_code_used ? <Badge variant="outline">{u.promo_code_used}</Badge> : <span className="text-slate-400">—</span>}</TableCell>
                   <TableCell className="text-xs text-slate-500">{(u.created_at || '').slice(0, 10)}</TableCell>
+                  <TableCell className="text-xs">
+                    {isDeleted ? (
+                      <div>
+                        <Badge variant="destructive" className="text-[10px]">Supprimé</Badge>
+                        <div className="text-slate-500 mt-0.5">
+                          {(u.deleted_at || '').slice(0, 10)}
+                          <br />par <strong>{u.deleted_by === 'self' ? 'utilisateur' : 'admin'}</strong>
+                        </div>
+                        {u.deletion_reason && <div className="text-slate-400 italic mt-0.5">{u.deletion_reason}</div>}
+                      </div>
+                    ) : isScheduled ? (
+                      <div>
+                        <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">Programmée</Badge>
+                        <div className="text-slate-500 mt-0.5">
+                          {(u.scheduled_deletion || '').slice(0, 10)}
+                          <br />par <strong>{u.deleted_by === 'self' ? 'utilisateur' : 'admin'}</strong>
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1 items-center flex-wrap">
                       <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'free')} data-testid={`admin-user-${u.id}-free`}>Free</Button>
                       <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'essentiel')} data-testid={`admin-user-${u.id}-essentiel`}>Essentiel</Button>
                       <Button size="sm" variant="outline" onClick={() => changePlan(u.id, 'serenite')} data-testid={`admin-user-${u.id}-serenite`}>Sérénité</Button>
-                      <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteUser(u.id, u.email)} data-testid={`admin-user-${u.id}-delete`}>
+                      <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteUser(u.id, u.email)} data-testid={`admin-user-${u.id}-delete`} disabled={isDeleted}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+              );})}
               {users.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-slate-400 py-8">Aucun utilisateur</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-slate-400 py-8">Aucun utilisateur</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

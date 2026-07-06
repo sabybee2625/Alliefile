@@ -3650,6 +3650,8 @@ async def startup_db_indexes():
         logger.warning(f"Index creation warning (may already exist): {e}")
 
     async def _chatel_loop():
+        # Retard initial pour ne pas bloquer le healthcheck K8s au premier démarrage
+        await asyncio.sleep(3600)
         while True:
             try:
                 await run_chatel_reminder_check(db)
@@ -3660,6 +3662,7 @@ async def startup_db_indexes():
     asyncio.create_task(_chatel_loop())
 
     async def _purge_loop():
+        await asyncio.sleep(3600)
         while True:
             try:
                 await run_deletion_purge(db, storage)

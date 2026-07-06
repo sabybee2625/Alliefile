@@ -82,7 +82,7 @@ class Config:
         self.EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
         
         # Stripe
-        self.STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+        self.STRIPE_SECRET_KEY = os.environ.get("STRIPE_API_KEY")
         self.STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
         self.STRIPE_PRICE_STANDARD = os.environ.get("STRIPE_PRICE_STANDARD")
         self.STRIPE_PRICE_PREMIUM = os.environ.get("STRIPE_PRICE_PREMIUM")

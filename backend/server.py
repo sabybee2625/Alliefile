@@ -350,6 +350,31 @@ async def get_user_plan(user: dict) -> str:
     
     return plan
 
+async def get_accessible_dossier_ids(user: dict) -> Optional[List[str]]:
+    """
+    Return the list of dossier IDs the user is allowed to access based on their
+    current plan limits. Enforced after a downgrade so users cannot access data
+    that exceeds their new plan quota.
+
+    Returns None when the plan is unlimited (no restriction to apply).
+    Returns a list of allowed dossier IDs otherwise (may be empty).
+    Selection rule: keep the oldest dossiers first (sorted by created_at asc),
+    up to `max_dossiers`.
+    """
+    plan = await get_user_plan(user)
+    limits = get_plan_limits(plan)
+
+    # Unlimited plans (-1) → no restriction
+    if limits.max_dossiers is None or limits.max_dossiers < 0:
+        return None
+
+    cursor = db.dossiers.find(
+        {"user_id": user["id"]},
+        {"_id": 0, "id": 1}
+    ).sort("created_at", 1).limit(int(limits.max_dossiers))
+    docs = await cursor.to_list(length=int(limits.max_dossiers))
+    return [d["id"] for d in docs]
+
 async def check_plan_limit(user: dict, limit_type: str, current_count: int = 0) -> bool:
     """
     Check if user is within their plan limits
@@ -1271,6 +1296,12 @@ async def get_dossier(dossier_id: str, user: dict = Depends(get_current_user)):
     dossier = await db.dossiers.find_one({"id": dossier_id, "user_id": user["id"]}, {"_id": 0})
     if not dossier:
         raise HTTPException(status_code=404, detail="Dossier not found")
+
+    # Enforce plan limits after downgrade: block access to dossiers beyond quota
+    accessible_ids = await get_accessible_dossier_ids(user)
+    if accessible_ids is not None and dossier_id not in accessible_ids:
+        raise HTTPException(status_code=403, detail="ACCOUNT_OVER_PLAN_LIMIT")
+
     count = await db.pieces.count_documents({"dossier_id": dossier_id})
     return DossierResponse(**dossier, piece_count=count)
 
@@ -1555,7 +1586,21 @@ async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
     dossier = await db.dossiers.find_one({"id": piece["dossier_id"], "user_id": user["id"]})
     if not dossier:
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
+    # Enforce plan limits after downgrade
+    accessible_ids = await get_accessible_dossier_ids(user)
+    if accessible_ids is not None and piece["dossier_id"] not in accessible_ids:
+        raise HTTPException(status_code=403, detail="ACCOUNT_OVER_PLAN_LIMIT")
+
+    plan = await get_user_plan(user)
+    limits = get_plan_limits(plan)
+    if (
+        limits.max_total_pieces is not None
+        and limits.max_total_pieces >= 0
+        and piece.get("numero", 0) > limits.max_total_pieces
+    ):
+        raise HTTPException(status_code=403, detail="ACCOUNT_OVER_PLAN_LIMIT")
+
     piece["file_missing"] = not await storage.file_exists(piece["filename"])
     return PieceResponse(**piece)
 

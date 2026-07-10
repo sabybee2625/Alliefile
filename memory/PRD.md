@@ -1,5 +1,15 @@
 # AlliéFile — PRD
 
+
+## Version 1.7.0 — Plan quota enforcement on read after downgrade (2026-07-10)
+
+### Livraison
+- ✅ **`get_accessible_dossier_ids(user)`** dans `server.py` : renvoie la liste des dossiers accessibles selon `max_dossiers` du plan actuel (tri `created_at` ASC, `None` = illimité).
+- ✅ **`GET /api/dossiers/{id}`** : renvoie `403 ACCOUNT_OVER_PLAN_LIMIT` si le dossier est au-delà du quota du plan actuel (après downgrade).
+- ✅ **`GET /api/pieces/{id}`** : double contrôle — accès dossier + `numero > max_total_pieces` → `403 ACCOUNT_OVER_PLAN_LIMIT`.
+- ✅ Tests end-to-end validés : premium → downgrade free → dossiers/pièces hors quota bloqués, 1er dossier & pièces 1..15 toujours accessibles. Pytest smoke (7/7) OK.
+
+
 ## Version 1.4.0 — Admin + Stripe webhooks + Tests pytest (2026-05-02)
 
 ### Original Problem Statement

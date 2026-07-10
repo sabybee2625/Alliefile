@@ -1298,7 +1298,13 @@ async def get_dossier(dossier_id: str, user: dict = Depends(get_current_user)):
     # Enforce plan limits after downgrade: block access to dossiers beyond quota
     accessible_ids = await get_accessible_dossier_ids(user)
     if accessible_ids is not None and dossier_id not in accessible_ids:
-        raise HTTPException(status_code=403, detail="ACCOUNT_OVER_PLAN_LIMIT")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "ACCOUNT_OVER_PLAN_LIMIT",
+                "message": "Ce dossier dépasse la limite de votre plan actuel. Passez à un plan supérieur pour le retrouver."
+            }
+        )
 
     count = await db.pieces.count_documents({"dossier_id": dossier_id})
     return DossierResponse(**dossier, piece_count=count)
@@ -1588,7 +1594,13 @@ async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
     # Enforce plan limits after downgrade
     accessible_ids = await get_accessible_dossier_ids(user)
     if accessible_ids is not None and piece["dossier_id"] not in accessible_ids:
-        raise HTTPException(status_code=403, detail="ACCOUNT_OVER_PLAN_LIMIT")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "ACCOUNT_OVER_PLAN_LIMIT",
+                "message": "Cette pièce n'est plus accessible avec votre plan actuel."
+            }
+        )
 
     plan = await get_user_plan(user)
     limits = get_plan_limits(plan)
@@ -1597,7 +1609,13 @@ async def get_piece(piece_id: str, user: dict = Depends(get_current_user)):
         and limits.max_total_pieces >= 0
         and piece.get("numero", 0) > limits.max_total_pieces
     ):
-        raise HTTPException(status_code=403, detail="ACCOUNT_OVER_PLAN_LIMIT")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "ACCOUNT_OVER_PLAN_LIMIT",
+                "message": "Cette pièce n'est plus accessible avec votre plan actuel."
+            }
+        )
 
     piece["file_missing"] = not await storage.file_exists(piece["filename"])
     return PieceResponse(**piece)

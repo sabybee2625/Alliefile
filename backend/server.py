@@ -358,7 +358,7 @@ async def get_accessible_dossier_ids(user: dict) -> Optional[List[str]]:
 
     Returns None when the plan is unlimited (no restriction to apply).
     Returns a list of allowed dossier IDs otherwise (may be empty).
-    Selection rule: keep the oldest dossiers first (sorted by created_at asc),
+    Selection rule: keep the most recently updated dossiers first,
     up to `max_dossiers`.
     """
     plan = await get_user_plan(user)
@@ -368,12 +368,10 @@ async def get_accessible_dossier_ids(user: dict) -> Optional[List[str]]:
     if limits.max_dossiers is None or limits.max_dossiers < 0:
         return None
 
-    cursor = db.dossiers.find(
-        {"user_id": user["id"]},
-        {"_id": 0, "id": 1}
-    ).sort("created_at", 1).limit(int(limits.max_dossiers))
-    docs = await cursor.to_list(length=int(limits.max_dossiers))
-    return [d["id"] for d in docs]
+    dossiers = await db.dossiers.find(
+        {"user_id": user["id"]}, {"id": 1}
+    ).sort("updated_at", -1).limit(limits.max_dossiers).to_list(limits.max_dossiers)
+    return [d["id"] for d in dossiers]
 
 async def check_plan_limit(user: dict, limit_type: str, current_count: int = 0) -> bool:
     """

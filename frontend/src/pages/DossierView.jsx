@@ -182,6 +182,7 @@ const DossierView = () => {
     }
   };
   const [reuploadTarget, setReuploadTarget] = useState(null);
+  const [planLimitLocked, setPlanLimitLocked] = useState(false);
   const [reuploading, setReuploading] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
@@ -195,7 +196,11 @@ const DossierView = () => {
       setDossier(dossierRes.data);
       setPieces(piecesRes.data);
     } catch (error) {
-      toast.error('Erreur lors du chargement');
+      if (error.response?.data?.detail?.error === 'ACCOUNT_OVER_PLAN_LIMIT') {
+        setPlanLimitLocked(true);
+      } else {
+        toast.error('Erreur lors du chargement');
+      }
     } finally {
       setLoading(false);
     }
@@ -747,6 +752,30 @@ const DossierView = () => {
       <Layout>
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (planLimitLocked) {
+    return (
+      <Layout>
+        <div className="text-center py-16 max-w-md mx-auto">
+          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-amber-50 flex items-center justify-center">
+            <Lock className="w-7 h-7 text-amber-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-800 mb-2">Ce dossier est verrouillé</h2>
+          <p className="text-slate-500 mb-6">
+            Votre plan actuel ne permet plus d'accéder à ce dossier. Passez à un plan supérieur pour le retrouver instantanément — rien n'est jamais supprimé.
+          </p>
+          <Link to="/pricing">
+            <Button className="bg-red-600 hover:bg-red-700">Voir les plans et me réabonner</Button>
+          </Link>
+          <div>
+            <Link to="/dashboard">
+              <Button variant="link" className="mt-3">Retour aux dossiers</Button>
+            </Link>
+          </div>
         </div>
       </Layout>
     );

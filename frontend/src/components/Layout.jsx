@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { FolderOpen, LogOut, User, Scale } from 'lucide-react';
+import { FolderOpen, LogOut, User, Scale, Settings as SettingsIcon } from 'lucide-react';
 
 export const Layout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -80,6 +80,14 @@ export const Layout = ({ children }) => {
                     <p className="text-xs text-slate-500">{user.email}</p>
                   </div>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => navigate('/settings')}
+                    className="cursor-pointer"
+                    data-testid="settings-menu-item"
+                  >
+                    <SettingsIcon className="w-4 h-4 mr-2" />
+                    Paramètres
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={handleLogout}
                     className="text-red-600 cursor-pointer"

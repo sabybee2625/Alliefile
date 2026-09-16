@@ -98,7 +98,7 @@ const BetaCodeSection = ({ onActivated }) => {
 };
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [dossiers, setDossiers] = useState([]);
   const [loading, setLoading] = useState(true);

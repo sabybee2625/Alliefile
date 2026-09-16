@@ -124,6 +124,7 @@ class UserResponse(BaseModel):
     name: str
     plan: str = "free"
     plan_expires_at: Optional[str] = None
+    has_stripe_customer: bool = False
     created_at: str
 
 class UserStats(BaseModel):
@@ -483,6 +484,7 @@ async def login(data: UserLogin, request: Request):
             name=user["name"], 
             plan=user.get("plan", "free"),
             plan_expires_at=user.get("plan_expires_at"),
+            has_stripe_customer=bool(user.get("stripe_customer_id")),
             created_at=user["created_at"]
         )
     )
@@ -495,8 +497,41 @@ async def get_me(user: dict = Depends(get_current_user)):
         name=user["name"], 
         plan=user.get("plan", "free"),
         plan_expires_at=user.get("plan_expires_at"),
+        has_stripe_customer=bool(user.get("stripe_customer_id")),
         created_at=user["created_at"]
     )
+
+
+@api_router.post("/create-portal-session")
+async def create_portal_session(request: Request, user: dict = Depends(get_current_user)):
+    """Create a Stripe Customer Portal session so the user can manage their subscription."""
+    customer_id = user.get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun abonnement actif associé à ce compte."
+        )
+
+    api_key = os.environ.get("STRIPE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Stripe non configuré")
+
+    import stripe as stripe_lib
+    stripe_lib.api_key = api_key
+
+    origin_url = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    return_url = f"{origin_url}/settings"
+
+    try:
+        session = stripe_lib.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+    except stripe_lib.error.StripeError as e:
+        logger.error(f"Stripe portal session error for user {user['id']}: {e}")
+        raise HTTPException(status_code=502, detail="Impossible d'ouvrir le portail Stripe.")
+
+    return {"url": session.url}
 
 
 # ============================================================
@@ -2671,12 +2706,12 @@ def format_date_fr(date_str: str) -> str:
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return dt.strftime("%d/%m/%Y")
-    except:
+    except Exception:
         try:
             parts = date_str.split("-")
             if len(parts) == 3:
                 return f"{parts[2]}/{parts[1]}/{parts[0]}"
-        except:
+        except Exception:
             pass
         return date_str
 

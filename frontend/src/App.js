@@ -15,6 +15,7 @@ import Confidentialite from './pages/Confidentialite';
 import CGU from './pages/CGU';
 import NotFound from './pages/NotFound';
 import AdminPage from './pages/Admin';
+import Settings from './pages/Settings';
 import ResetPassword, { ForgotPassword } from './pages/ResetPassword';
 import './App.css';
 
@@ -111,6 +112,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Settings />
           </ProtectedRoute>
         }
       />

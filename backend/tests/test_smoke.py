@@ -1,6 +1,20 @@
 """Smoke tests for AlliéFile critical endpoints (run against live backend)."""
+import os
 import time
 import requests
+from pymongo import MongoClient
+
+
+def _verify_email(email):
+    """Mark a user's email as verified directly in the DB (test helper)."""
+    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    db_name = os.environ.get("DB_NAME", "justice-hub-45-alliefile")
+    client = MongoClient(mongo_url)
+    client[db_name].users.update_one(
+        {"email": email},
+        {"$set": {"email_verified": True}}
+    )
+    client.close()
 
 
 def _register(base_url, email, retries=3):
@@ -10,6 +24,7 @@ def _register(base_url, email, retries=3):
             "name": "Pytest User", "email": email, "password": "PytestPass123!",
         }, timeout=10)
         if r.status_code == 200:
+            _verify_email(email)
             return r
         if r.status_code == 429 and i < retries - 1:
             time.sleep(65)

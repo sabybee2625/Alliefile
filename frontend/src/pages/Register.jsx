@@ -49,9 +49,14 @@ const Register = () => {
 
     setLoading(true);
     try {
-      await register(email, password, name);
-      toast.success('Compte créé avec succès');
-      navigate('/dashboard');
+      const res = await register(email, password, name);
+      if (res.user?.email_verified === false) {
+        toast.success('Compte créé. Vérifiez votre email.');
+        navigate('/verify-email');
+      } else {
+        toast.success('Compte créé avec succès');
+        navigate('/dashboard');
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erreur lors de la création du compte');
     } finally {

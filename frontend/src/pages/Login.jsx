@@ -24,9 +24,14 @@ const Login = () => {
 
     setLoading(true);
     try {
-      await login(email, password);
-      toast.success('Connexion réussie');
-      navigate('/dashboard');
+      const res = await login(email, password);
+      if (res.user?.email_verified === false) {
+        toast.info('Vérifiez votre email pour activer votre compte.');
+        navigate('/verify-email');
+      } else {
+        toast.success('Connexion réussie');
+        navigate('/dashboard');
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erreur de connexion');
     } finally {

@@ -46,7 +46,7 @@ from security import (
     validate_user_owns_resource
 )
 from storage import get_storage_backend, compute_file_hash, LocalStorage, GridFSStorage, EmergentObjectStorage
-from emailing import send_welcome_email_background, send_password_reset_email_background
+from emailing import send_welcome_email_background, send_password_reset_email_background, send_otp_email_background
 from admin import register_admin_routes
 from piece_classifier import classify_piece
 from chatel_reminder import run_chatel_reminder_check
@@ -125,6 +125,7 @@ class UserResponse(BaseModel):
     plan: str = "free"
     plan_expires_at: Optional[str] = None
     has_stripe_customer: bool = False
+    email_verified: bool = True
     created_at: str
 
 class UserStats(BaseModel):
@@ -291,12 +292,41 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
+def generate_otp_code() -> str:
+    """Generate a 6-digit numeric OTP code."""
+    import secrets
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+def hash_otp(code: str) -> str:
+    return pwd_context.hash(code)
+
+def verify_otp(code: str, hashed: str) -> bool:
+    return pwd_context.verify(code, hashed)
+
 def create_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
         "exp": datetime.now(timezone.utc) + timedelta(hours=config.JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
+
+async def get_current_user_pending(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Return user without enforcing email verification.
+    Used only by /auth/verify-otp and /auth/resend-otp."""
+    try:
+        payload = jwt.decode(credentials.credentials, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
@@ -307,6 +337,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        # Block access if email is not verified.
+        # Backward-compat: users created before this feature don't have the field
+        # → considered verified. Only new accounts with explicit False are blocked.
+        if user.get("email_verified") is False:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "EMAIL_NOT_VERIFIED",
+                    "message": "Veuillez vérifier votre adresse email pour activer votre compte."
+                }
+            )
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -427,6 +468,8 @@ async def register(data: UserCreate, request: Request, background_tasks: Backgro
     
     user_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    otp_code = generate_otp_code()
+    otp_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
     user_doc = {
         "id": user_id,
         "email": data.email,
@@ -437,20 +480,24 @@ async def register(data: UserCreate, request: Request, background_tasks: Backgro
         "stripe_customer_id": None,
         "assistant_uses_today": 0,
         "assistant_last_reset": now,
+        "email_verified": False,
+        "otp_code_hash": hash_otp(otp_code),
+        "otp_expires_at": otp_expires_at,
+        "otp_attempts": 0,
         "created_at": now
     }
     await db.users.insert_one(user_doc)
-    
-    # Fire-and-forget welcome email (non-blocking, never fails the request)
+
+    # Send OTP verification email (welcome email will be sent after verification)
     try:
-        background_tasks.add_task(send_welcome_email_background, data.email, data.name)
+        background_tasks.add_task(send_otp_email_background, data.email, data.name, otp_code)
     except Exception as e:
-        logger.error(f"Failed to enqueue welcome email for {data.email}: {e}")
-    
+        logger.error(f"Failed to enqueue OTP email for {data.email}: {e}")
+
     token = create_token(user_id)
     return TokenResponse(
         access_token=token,
-        user=UserResponse(id=user_id, email=data.email, name=data.name, plan="free", created_at=now)
+        user=UserResponse(id=user_id, email=data.email, name=data.name, plan="free", email_verified=False, created_at=now)
     )
 
 @api_router.post("/auth/login", response_model=TokenResponse)
@@ -485,12 +532,13 @@ async def login(data: UserLogin, request: Request):
             plan=user.get("plan", "free"),
             plan_expires_at=user.get("plan_expires_at"),
             has_stripe_customer=bool(user.get("stripe_customer_id")),
+            email_verified=user.get("email_verified") is not False,
             created_at=user["created_at"]
         )
     )
 
 @api_router.get("/auth/me", response_model=UserResponse)
-async def get_me(user: dict = Depends(get_current_user)):
+async def get_me(user: dict = Depends(get_current_user_pending)):
     return UserResponse(
         id=user["id"], 
         email=user["email"], 
@@ -498,8 +546,88 @@ async def get_me(user: dict = Depends(get_current_user)):
         plan=user.get("plan", "free"),
         plan_expires_at=user.get("plan_expires_at"),
         has_stripe_customer=bool(user.get("stripe_customer_id")),
+        email_verified=user.get("email_verified") is not False,
         created_at=user["created_at"]
     )
+
+
+class OtpVerifyRequest(BaseModel):
+    code: str
+
+
+@api_router.post("/auth/verify-otp")
+async def verify_otp_endpoint(
+    data: OtpVerifyRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user_pending)
+):
+    """Verify the OTP code sent by email. Activates the account on success."""
+    if user.get("email_verified") is True:
+        return {"success": True, "already_verified": True}
+
+    code = (data.code or "").strip()
+    if not code.isdigit() or len(code) != 6:
+        raise HTTPException(status_code=400, detail="Code invalide (6 chiffres attendus).")
+
+    otp_hash = user.get("otp_code_hash")
+    otp_expires_at = user.get("otp_expires_at")
+    attempts = int(user.get("otp_attempts") or 0)
+
+    if not otp_hash or not otp_expires_at:
+        raise HTTPException(status_code=400, detail="Aucun code de vérification en attente. Demandez un nouveau code.")
+
+    if attempts >= 5:
+        raise HTTPException(status_code=429, detail="Trop de tentatives. Demandez un nouveau code.")
+
+    if datetime.fromisoformat(otp_expires_at) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Code expiré. Demandez un nouveau code.")
+
+    if not verify_otp(code, otp_hash):
+        await db.users.update_one({"id": user["id"]}, {"$inc": {"otp_attempts": 1}})
+        raise HTTPException(status_code=400, detail="Code incorrect.")
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {"email_verified": True},
+            "$unset": {"otp_code_hash": "", "otp_expires_at": "", "otp_attempts": ""}
+        }
+    )
+
+    # Send the welcome email now that the account is activated
+    try:
+        background_tasks.add_task(send_welcome_email_background, user["email"], user["name"])
+    except Exception as e:
+        logger.error(f"Failed to enqueue welcome email for {user['email']}: {e}")
+
+    return {"success": True}
+
+
+@api_router.post("/auth/resend-otp")
+async def resend_otp_endpoint(
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user_pending)
+):
+    """Regenerate an OTP code and resend the verification email."""
+    if user.get("email_verified") is True:
+        return {"success": True, "already_verified": True}
+
+    otp_code = generate_otp_code()
+    otp_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "otp_code_hash": hash_otp(otp_code),
+            "otp_expires_at": otp_expires_at,
+            "otp_attempts": 0,
+        }}
+    )
+    try:
+        background_tasks.add_task(send_otp_email_background, user["email"], user["name"], otp_code)
+    except Exception as e:
+        logger.error(f"Failed to enqueue OTP email for {user['email']}: {e}")
+
+    return {"success": True}
 
 
 @api_router.post("/create-portal-session")

@@ -19,6 +19,7 @@ except ImportError:
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "bonjour@alliefile.com")
 SENDER_NAME = os.environ.get("SENDER_NAME", "AlliéFile")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://alliefile.com")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 
 def _configure():
@@ -184,6 +185,59 @@ def _reset_html(name: str, reset_url: str) -> str:
 def send_password_reset_email_background(to_email: str, name: str, reset_url: str) -> None:
     """Synchronous wrapper for FastAPI BackgroundTasks."""
     _send_sync(to_email, "Réinitialisation de votre mot de passe AlliéFile", _reset_html(name, reset_url))
+
+
+def _otp_html(name: str, code: str) -> str:
+    safe_name = (name or "").strip() or "à toi"
+    return f"""\
+<!doctype html>
+<html lang="fr">
+  <body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:32px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:4px;border:1px solid #e2e8f0;">
+          <tr><td style="padding:32px 40px 16px 40px;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#0f172a;width:32px;height:32px;border-radius:4px;text-align:center;vertical-align:middle;color:#ffffff;font-weight:bold;">A</td>
+                <td style="padding-left:10px;font-weight:bold;font-size:18px;color:#0f172a;">AlliéFile</td>
+              </tr>
+            </table>
+          </td></tr>
+          <tr><td style="padding:8px 40px 0 40px;">
+            <h1 style="margin:0 0 16px 0;font-size:22px;color:#0f172a;">Vérification de votre adresse email</h1>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Bonjour {safe_name},
+            </p>
+            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#475569;">
+              Merci de créer un compte AlliéFile. Pour activer votre compte, saisissez le code de vérification ci-dessous dans l'application :
+            </p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+              <tr><td align="center" style="background-color:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;padding:24px;">
+                <p style="margin:0;font-size:32px;font-weight:bold;letter-spacing:8px;color:#0f172a;font-family:'SF Mono','Consolas',monospace;">{code}</p>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 14px 0;font-size:14px;line-height:1.6;color:#64748b;">
+              Ce code est valable <strong>10 minutes</strong>. Ne le partagez avec personne.
+            </p>
+            <p style="margin:18px 0 0 0;font-size:13px;line-height:1.6;color:#94a3b8;">
+              Si vous n'êtes pas à l'origine de cette inscription, ignorez simplement ce message.
+            </p>
+          </td></tr>
+          <tr><td style="padding:24px 40px 32px 40px;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">AlliéFile — Votre allié juridique intelligent</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>
+"""
+
+
+def send_otp_email_background(to_email: str, name: str, code: str) -> None:
+    """Synchronous wrapper for FastAPI BackgroundTasks."""
+    _send_sync(to_email, f"Votre code de vérification AlliéFile : {code}", _otp_html(name, code))
 
 
 

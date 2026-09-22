@@ -16,6 +16,7 @@ import CGU from './pages/CGU';
 import NotFound from './pages/NotFound';
 import AdminPage from './pages/Admin';
 import Settings from './pages/Settings';
+import VerifyEmail from './pages/VerifyEmail';
 import ResetPassword, { ForgotPassword } from './pages/ResetPassword';
 import './App.css';
 
@@ -30,6 +31,7 @@ const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.email_verified === false) return <Navigate to="/verify-email" replace />;
   return children;
 };
 
@@ -37,7 +39,17 @@ const ProtectedRoute = ({ children }) => {
 const PublicAuthRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
+  if (user && user.email_verified === false) return <Navigate to="/verify-email" replace />;
   if (user) return <Navigate to="/dashboard" replace />;
+  return children;
+};
+
+// Verify-email route: logged in but unverified only
+const VerifyEmailRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.email_verified !== false) return <Navigate to="/dashboard" replace />;
   return children;
 };
 
@@ -45,6 +57,7 @@ const PublicAuthRoute = ({ children }) => {
 const RootRoute = () => {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
+  if (user && user.email_verified === false) return <Navigate to="/verify-email" replace />;
   if (user) return <Navigate to="/dashboard" replace />;
   return <Landing />;
 };
@@ -74,6 +87,16 @@ function AppRoutes() {
       />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+
+      {/* Email verification (auth required but unverified) */}
+      <Route
+        path="/verify-email"
+        element={
+          <VerifyEmailRoute>
+            <VerifyEmail />
+          </VerifyEmailRoute>
+        }
+      />
 
       {/* Shared dossier (public, no auth required) */}
       <Route path="/shared/:token" element={<SharedDossier />} />
